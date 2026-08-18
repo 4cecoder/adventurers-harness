@@ -1,0 +1,57 @@
+# Adventurers Harness — macOS Ignore
+
+# Build
+.build/
+.swiftpm/
+DerivedData/
+*.o
+*.dSYM/
+Package.resolved
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Research repos (large, cloned separately)
+research/codex/
+research/opencode/
+research/hermes-agent/
+research/pi/
+research/little-coder/
+research/deepseek-harness/
+research/SmallCTL/
+
+# IDA workspace
+ida-workspace/*.i64
+ida-workspace/*.idb
+ida-workspace/*.id0
+ida-workspace/*.id1
+ida-workspace/*.nam
+ida-workspace/*.til
+
+# App data
+data/
+*.log
