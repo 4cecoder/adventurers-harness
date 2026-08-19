@@ -46,6 +46,20 @@ public final class SettingsModel {
     public var autoCompactThreshold: Double = 80.0
     public var checkUpdatesOnLaunch: Bool = true
 
+    // MARK: Speech & Dictation (Talkies Pipeline)
+    public var enableDictation: Bool = true {
+        didSet { save() }
+    }
+    public var dictationAutoPunctuation: Bool = true {
+        didSet { save() }
+    }
+    public var dictationSilenceTimeoutSeconds: Double = 4.5 {
+        didSet { save() }
+    }
+    public var dictationLanguage: String = "en-US" {
+        didSet { save() }
+    }
+
     // MARK: LLM Provider & Execution Mode
     public var executionMode: ExecutionMode = .codingPlan {
         didSet { save() }
@@ -402,7 +416,11 @@ public final class SettingsModel {
             baseURL: baseURL,
             executionMode: executionMode,
             selectedMetaHarness: selectedMetaHarness,
-            metaHarnessProfiles: metaHarnessProfiles
+            metaHarnessProfiles: metaHarnessProfiles,
+            enableDictation: enableDictation,
+            dictationAutoPunctuation: dictationAutoPunctuation,
+            dictationSilenceTimeoutSeconds: dictationSilenceTimeoutSeconds,
+            dictationLanguage: dictationLanguage
         )
         if let data = try? JSONEncoder().encode(persisted) {
             try? data.write(to: settingsFileURL)
@@ -432,6 +450,18 @@ public final class SettingsModel {
         } else {
             self.metaHarnessProfiles = MetaHarnessRegistry.shared.discoverProfiles()
         }
+        if let enabled = persisted.enableDictation {
+            self.enableDictation = enabled
+        }
+        if let punct = persisted.dictationAutoPunctuation {
+            self.dictationAutoPunctuation = punct
+        }
+        if let timeout = persisted.dictationSilenceTimeoutSeconds {
+            self.dictationSilenceTimeoutSeconds = timeout
+        }
+        if let lang = persisted.dictationLanguage {
+            self.dictationLanguage = lang
+        }
         return true
     }
 }
@@ -447,6 +477,10 @@ public struct PersistedSettings: Codable, Sendable {
     var executionMode: ExecutionMode?
     var selectedMetaHarness: MetaHarnessType?
     var metaHarnessProfiles: [MetaHarnessProfile]?
+    var enableDictation: Bool?
+    var dictationAutoPunctuation: Bool?
+    var dictationSilenceTimeoutSeconds: Double?
+    var dictationLanguage: String?
 }
 
 // MARK: - Provider Types
@@ -611,6 +645,8 @@ public struct SettingsView: View {
                             MetaHarnessSettingsPane(model: model)
                         case .general:
                             GeneralSettingsPane(model: model)
+                        case .dictation:
+                            DictationSettingsPane(model: model)
                         case .agents:
                             AgentsSettingsPane(model: model)
                         case .tools:
@@ -647,7 +683,7 @@ private enum SettingsGroup: String, CaseIterable {
         case .gatesAndSecurity:
             return [.agents, .tools, .sandbox]
         case .preferences:
-            return [.general, .appearance, .about]
+            return [.general, .dictation, .appearance, .about]
         }
     }
 }
@@ -657,6 +693,7 @@ private enum SettingsTab: String, CaseIterable {
     case llmProvider = "Cloud Coding Plans"
     case metaHarness = "Meta Harness CLIs"
     case general = "General"
+    case dictation = "Speech & Dictation"
     case agents = "Agents & Gates"
     case tools = "Tools"
     case sandbox = "Sandbox"
@@ -669,6 +706,7 @@ private enum SettingsTab: String, CaseIterable {
         case .llmProvider: return "cloud.fill"
         case .metaHarness: return "terminal.fill"
         case .general: return "gearshape"
+        case .dictation: return "mic.fill"
         case .agents: return "person.2.fill"
         case .tools: return "wrench.and.screwdriver"
         case .sandbox: return "lock.shield"
@@ -1627,6 +1665,176 @@ private struct GeneralSettingsPane: View {
                             .background(Color.adBackground)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                             .frame(width: 220)
+                    }
+                }
+                .padding(14)
+                .background(Color.adCard)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+            }
+        }
+    }
+}
+
+// MARK: - Speech & Dictation Settings Pane (Talkies Audio & Speech Recognition)
+
+private struct DictationSettingsPane: View {
+    @Bindable var model: SettingsModel
+    @ObservedObject private var dictation = DictationManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Speech & Dictation")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text("Talkies-powered speech-to-text with developer punctuation formatting and real-time RMS audio metering.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.adTextSecondary)
+            }
+
+            // Primary Toggle Card
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Enable Dictation in Message Bar")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.adTextPrimary)
+                        Text("Displays the one-click orange microphone button next to the prompt input field.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.adTextTertiary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $model.enableDictation)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                if model.enableDictation {
+                    Divider().foregroundStyle(Color.adDivider)
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Smart Developer Punctuation")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.adTextPrimary)
+                            Text("Automatically transforms spoken words like \"period\", \"comma\", \"new line\", \"arrow\", and \"code block\" into code formatting.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.adTextTertiary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $model.dictationAutoPunctuation)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                    }
+                }
+            }
+            .padding(14)
+            .background(Color.adCard)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+
+            if model.enableDictation {
+                // Audio & Silence Parameters
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("SILENCE & AUTO-COMMIT")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.adTextTertiary)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Silence Auto-Commit Duration")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(Color.adTextPrimary)
+                                Text("Automatically pauses recording and commits text after sustained silence.")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.adTextTertiary)
+                            }
+                            Spacer()
+                            Text(String(format: "%.1f s", model.dictationSilenceTimeoutSeconds))
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color.adOrange)
+                        }
+
+                        Slider(
+                            value: $model.dictationSilenceTimeoutSeconds,
+                            in: 1.5...8.0,
+                            step: 0.5
+                        )
+                        .tint(Color.adOrange)
+
+                        HStack {
+                            Text("Fast (1.5s)").font(.system(size: 10)).foregroundStyle(Color.adTextTertiary)
+                            Spacer()
+                            Text("Relaxed (8.0s)").font(.system(size: 10)).foregroundStyle(Color.adTextTertiary)
+                        }
+                    }
+                }
+                .padding(14)
+                .background(Color.adCard)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+
+                // Permissions & Hardware Status
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("SYSTEM PERMISSIONS & HARDWARE")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.adTextTertiary)
+
+                    VStack(spacing: 12) {
+                        HStack {
+                            Label("Microphone Access", systemImage: "mic.badge.checkmark")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.adTextPrimary)
+                            Spacer()
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(dictation.hasMicrophonePermission ? Color.adSuccess : Color.adError)
+                                    .frame(width: 8, height: 8)
+                                Text(dictation.hasMicrophonePermission ? "Authorized" : "Not Authorized")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(dictation.hasMicrophonePermission ? Color.adSuccess : Color.adError)
+                            }
+                        }
+
+                        Divider().foregroundStyle(Color.adDivider)
+
+                        HStack {
+                            Label("Apple Speech Recognition", systemImage: "waveform.badge.plus")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.adTextPrimary)
+                            Spacer()
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(dictation.hasSpeechPermission ? Color.adSuccess : Color.adError)
+                                    .frame(width: 8, height: 8)
+                                Text(dictation.hasSpeechPermission ? "Authorized" : "Not Authorized")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(dictation.hasSpeechPermission ? Color.adSuccess : Color.adError)
+                            }
+                        }
+
+                        Divider().foregroundStyle(Color.adDivider)
+
+                        HStack {
+                            Button("Check / Request Permissions") {
+                                dictation.checkPermissions()
+                            }
+                            .font(.system(size: 11, weight: .medium))
+                            .buttonStyle(.bordered)
+
+                            Spacer()
+
+                            if dictation.state.isListening {
+                                HStack(spacing: 6) {
+                                    Circle().fill(Color.red).frame(width: 6, height: 6)
+                                    Text("Microphone Active")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(Color.adOrange)
+                                }
+                            }
+                        }
                     }
                 }
                 .padding(14)

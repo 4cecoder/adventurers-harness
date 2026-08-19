@@ -97,6 +97,7 @@ public struct ThreadView: View {
                     set: { appState?.settingsModel.selectedMetaHarness = $0 }
                 ),
                 availableModels: appState?.settingsModel.modelsForActiveProvider() ?? threadVM.availableModels,
+                enableDictation: appState?.settingsModel.enableDictation ?? true,
                 isGenerating: threadVM.isGenerating,
                 isPaused: threadVM.isPaused,
                 queuedPrompts: threadVM.queuedPrompts,

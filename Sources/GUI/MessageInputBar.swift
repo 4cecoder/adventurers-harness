@@ -144,6 +144,7 @@ public struct MessageInputBar: View {
     @Binding public var executionMode: ExecutionMode
     @Binding public var selectedMetaHarness: MetaHarnessType
     public let availableModels: [String]
+    public let enableDictation: Bool
     public let isGenerating: Bool
     public let isPaused: Bool
     public let queuedPrompts: [QueuedPrompt]
@@ -168,6 +169,7 @@ public struct MessageInputBar: View {
         executionMode: Binding<ExecutionMode> = .constant(.codingPlan),
         selectedMetaHarness: Binding<MetaHarnessType> = .constant(.codex),
         availableModels: [String] = ["gpt-4o"],
+        enableDictation: Bool = true,
         isGenerating: Bool = false,
         isPaused: Bool = false,
         queuedPrompts: [QueuedPrompt] = [],
@@ -184,6 +186,7 @@ public struct MessageInputBar: View {
         self._executionMode = executionMode
         self._selectedMetaHarness = selectedMetaHarness
         self.availableModels = availableModels
+        self.enableDictation = enableDictation
         self.isGenerating = isGenerating
         self.isPaused = isPaused
         self.queuedPrompts = queuedPrompts
@@ -218,8 +221,10 @@ public struct MessageInputBar: View {
 
                 // Trailing Action Buttons (Dictation, Pause, Stop, Send)
                 HStack(spacing: 8) {
-                    // Talkies Minimal Single-Button Dictation
-                    dictationButton
+                    // Talkies Minimal Single-Button Dictation (Optional & Configurable)
+                    if enableDictation {
+                        dictationButton
+                    }
 
                     // Execution Controls (Pause, Stop, Send / Queue)
                     if isGenerating {
