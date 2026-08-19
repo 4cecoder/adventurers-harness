@@ -8,6 +8,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && 'IntersectionObserver' in window) {
+      document.documentElement.classList.add('js-reveal');
+    }
+  </script>
   <style>
     :root {
       --bg-dark: #080A0F;
@@ -54,17 +59,15 @@
       background-position: 0 0, 0 0, 0 0, 0 0, -1px -1px, -1px -1px;
     }
 
-    @media (prefers-reduced-motion: no-preference) {
-      .reveal {
-        opacity: 0;
-        transform: translateY(22px);
-        transition: opacity 0.6s ease, transform 0.6s ease;
-      }
+    html.js-reveal .reveal {
+      opacity: 0;
+      transform: translateY(22px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
 
-      .reveal.reveal-visible {
-        opacity: 1;
-        transform: translateY(0);
-      }
+    html.js-reveal .reveal.reveal-visible {
+      opacity: 1;
+      transform: translateY(0);
     }
 
     .section-eyebrow {
@@ -946,7 +949,7 @@
       }
     };
 
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && 'IntersectionObserver' in window) {
+    if (document.documentElement.classList.contains('js-reveal')) {
       const revealObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
@@ -957,8 +960,12 @@
       }, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
 
       document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
-    } else {
-      document.querySelectorAll('.reveal').forEach(el => el.classList.add('reveal-visible'));
+
+      // Safety net: guarantee content is never permanently stuck invisible
+      // if the observer fails to fire in some environment.
+      setTimeout(() => {
+        document.querySelectorAll('.reveal:not(.reveal-visible)').forEach(el => el.classList.add('reveal-visible'));
+      }, 3000);
     }
 
     function toggleNav() {
