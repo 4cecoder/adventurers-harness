@@ -38,35 +38,43 @@ Download the latest continuous build from GitHub Actions:
 ```
 Sources/
 ├── GUI/                    # Native macOS SwiftUI application (Obsidian Glass Theme)
-│   ├── AdventurersApp.swift    # App entry, three-panel layout
-│   ├── AppUpdateManager.swift  # In-app GitHub update checker & 1-click installer
-│   ├── ThreadListView.swift    # Sidebar: parallel agent threads
-│   ├── ThreadView.swift        # Center: chat, code blocks, mode switcher
-│   ├── GateProgressView.swift  # 6-Gate certification pipeline visualization
+│   ├── AdventurersApp.swift    # App entry, three-panel workspace layout
+│   ├── ThreadView.swift        # Root container wiring gate bar, messages, and input
+│   ├── ThreadViewModel.swift   # Observable state, tool executor, snapshots & recovery
+│   ├── ThreadMessageRow.swift  # Message bubbles, rich markdown, and syntax code blocks
+│   ├── ToolClusterViews.swift  # Auto-collapsing multi-tool clusters and indicators
+│   ├── MessageInputBar.swift   # Glass input bar, native text editor & prompt queue
+│   ├── CompactGateBar.swift    # Compact gate status lights & workspace selector
+│   ├── TaskContractProgressCard.swift # Long-horizon phase contract and 1-click rollback
+│   ├── GateProgressView.swift  # Deterministic certification pipeline drawer
 │   ├── DiffViewer.swift        # Side-by-side/unified diff review & preflight patcher
 │   ├── SkillsPanel.swift       # Skill library management
 │   ├── PermissionDialog.swift  # Risk-level tool approval system
-│   ├── TerminalOutputView.swift# Interactive terminal with self-development quick chips
-│   ├── WorkbenchStatusBar.swift# Real-time sliding window TPS & telemetry chips
-│   ├── SettingsView.swift      # Engine, Cloud Plans, Meta-Harness, and Gates settings
-│   ├── Theme.swift             # Design system: colors, typography, spacing
-│   └── Components.swift        # Reusable UI component library
+│   ├── WorkbenchStatusBar.swift# Real-time sliding window TPS & telemetry meters
+│   └── Theme.swift             # Obsidian glass styling, fonts & gradients
 ├── AdventurersCore/        # Core harness engine
 │   ├── Protocols.swift         # LLMProvider, Tool, Gate protocols
 │   ├── AgentLoop.swift         # Propose → Gate → Certify cycle
-│   ├── TaskContract.swift      # Immutable task boundaries & budgets
-│   ├── StateEngine.swift       # FSM with enforced transitions
-│   ├── Gates.swift             # 6 deterministic certification gates
+│   ├── DangerousCommandDetector.swift # Banned patterns, wrapped shell & sudo inspector
+│   ├── ExecPolicy.swift        # Layered allow/deny/askApproval execution engine
+│   ├── ToolApproval.swift      # Session tokens, rejection counters & auto-escalation
+│   ├── NetworkGate.swift       # Protocol filter (HTTPS) and wildcard domain allowlist
+│   ├── TaskJudger.swift        # Semi-deterministic turn optimizer (fastDirect vs longHorizon)
+│   ├── AlignmentGriller.swift  # Ambiguity detection & clarification probe generator
+│   ├── SessionCheckpointEngine.swift # Atomic workspace file snapshotting & rollback
+│   ├── TaskContractManager.swift # Long-horizon task contract, phases & checklists
+│   ├── ContextCompactor.swift  # Anchor-preserving (head/tail) context compactor
+│   ├── StateEngine.swift       # FSM with strictly enforced transitions
+│   ├── Gates.swift             # Deterministic verification gate pipeline
 │   ├── DarwinSandbox.swift     # Kernel-enforced Seatbelt sandbox profiles
 │   ├── MetaHarness.swift       # Multi-agent subprocess execution engine
 │   ├── MeteringTelemetry.swift # 1.2s sliding window token velocity & cost ledger
 │   ├── DiffEngine.swift        # Context-matching atomic diff preflight & patcher
-│   ├── TrajectoryCompressor.swift # Anchor-preserving history compactor
-│   ├── FailChain.swift         # Escalating capsule feedback engine
-│   └── EventJournal.swift      # Append-only JSONL event store
+│   ├── ThreadMessageConsolidator.swift # Proximity-based multi-tool message consolidator
+│   └── FailChain.swift         # Escalating capsule feedback engine
 ├── LLMProviders/           # Universal multi-model cloud streaming (OpenCode, Claude, GPT, GLM)
 ├── Tools/                  # Sandboxed File, Bash, Glob, Grep tools
-└── Tests/                  # 14/14 unit test suite
+└── Tests/                  # Modular test suites by domain (7 suites, 28+ tests)
 ```
 
 ## Documentation
