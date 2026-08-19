@@ -1010,6 +1010,17 @@ private struct MetaHarnessSettingsPane: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Color.adTextSecondary)
 
+                HStack(spacing: 8) {
+                    Image(systemName: "terminal.fill")
+                        .foregroundStyle(Color.adSuccess)
+                    Text("Meta Harnesses run as autonomous terminal beings using their existing CLI session, local login, and native environment. No API keys required.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.adTextSecondary)
+                }
+                .padding(8)
+                .background(Color.adSuccess.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
                 Divider().overlay(Color.adDivider)
 
                 // Binary Executable Path
@@ -1034,10 +1045,10 @@ private struct MetaHarnessSettingsPane: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.adDivider, lineWidth: 1))
                 }
 
-                // Dedicated API Key
+                // Optional API Key Override
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("Dedicated API Key / Auth Token")
+                        Text("Optional API Key Override (Only if not logged in via CLI)")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Color.adTextSecondary)
                         Spacer()

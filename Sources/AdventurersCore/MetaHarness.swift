@@ -163,7 +163,7 @@ public struct MetaHarnessProfile: Identifiable, Sendable, Codable {
         type: MetaHarnessType,
         binaryPath: String = "",
         apiKey: String = "",
-        authMode: MetaHarnessAuthMode = .hybrid,
+        authMode: MetaHarnessAuthMode = .nativeSubscription,
         customArgs: [String] = [],
         envVars: [String: String] = [:],
         isEnabled: Bool = true,
