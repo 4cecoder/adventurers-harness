@@ -647,6 +647,8 @@ public struct SettingsView: View {
                             GeneralSettingsPane(model: model)
                         case .dictation:
                             DictationSettingsPane(model: model)
+                        case .diagnostics:
+                            DiagnosticsSettingsPane()
                         case .agents:
                             AgentsSettingsPane(model: model)
                         case .tools:
@@ -683,7 +685,7 @@ private enum SettingsGroup: String, CaseIterable {
         case .gatesAndSecurity:
             return [.agents, .tools, .sandbox]
         case .preferences:
-            return [.general, .dictation, .appearance, .about]
+            return [.general, .dictation, .diagnostics, .appearance, .about]
         }
     }
 }
@@ -694,6 +696,7 @@ private enum SettingsTab: String, CaseIterable {
     case metaHarness = "Meta Harness CLIs"
     case general = "General"
     case dictation = "Speech & Dictation"
+    case diagnostics = "Crash Logs & Diagnostics"
     case agents = "Agents & Gates"
     case tools = "Tools"
     case sandbox = "Sandbox"
@@ -707,6 +710,7 @@ private enum SettingsTab: String, CaseIterable {
         case .metaHarness: return "terminal.fill"
         case .general: return "gearshape"
         case .dictation: return "mic.fill"
+        case .diagnostics: return "ant.circle.fill"
         case .agents: return "person.2.fill"
         case .tools: return "wrench.and.screwdriver"
         case .sandbox: return "lock.shield"
@@ -2074,6 +2078,216 @@ private struct AppearanceSettingsPane: View {
     }
 }
 
+// MARK: - Crash Logs & Diagnostics Settings Pane
+
+private struct DiagnosticsSettingsPane: View {
+    @State private var crashReports: [CrashReport] = []
+    @State private var systemReports: [URL] = []
+    @State private var selectedReport: CrashReport?
+    @State private var copiedToast: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            // Header
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Crash Logs & Diagnostics")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text("View native callstack backtraces, Unix signals, uncaught exceptions, and activity breadcrumbs.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.adTextSecondary)
+            }
+
+            // Diagnostic Actions Card
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Button {
+                        refreshReports()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Refresh Logs")
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.adElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                    Button {
+                        let dir = CrashReporterManager.shared.crashDirectory
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: dir.path)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "folder.fill")
+                            Text("Open Crash Folder")
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.adElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                    Button {
+                        let sessionDir = FileManager.default.homeDirectoryForCurrentUser
+                            .appendingPathComponent(".adventurers/sessions", isDirectory: true)
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: sessionDir.path)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "list.bullet.rectangle.fill")
+                            Text("Open Session JSONL Logs")
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.adElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                    Spacer()
+
+                    if !crashReports.isEmpty {
+                        Button("Clear Reports") {
+                            CrashReporterManager.shared.clearAllCrashReports()
+                            refreshReports()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.red.opacity(0.8))
+                    }
+                }
+
+                if let toast = copiedToast {
+                    Text(toast)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.cyan)
+                }
+            }
+            .padding(14)
+            .background(Color.adCard)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+
+            // Recent Crash Reports Section
+            VStack(alignment: .leading, spacing: 10) {
+                Text("RECORDED CRASH REPORTS (\(crashReports.count))")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                if crashReports.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.shield.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Color.cyan)
+                        Text("No crashes recorded! All native gates, signal handlers, and execution threads are healthy.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.adTextSecondary)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.adCard)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else {
+                    ForEach(crashReports) { report in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.red)
+
+                                Text(report.signal ?? report.exceptionName ?? "Crash Event")
+                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Color.adTextPrimary)
+
+                                Spacer()
+
+                                Text(ISO8601DateFormatter().string(from: report.timestamp))
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(Color.adTextTertiary)
+
+                                Button("Copy Full Report") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(report.formattedSummary, forType: .string)
+                                    copiedToast = "✓ Copied crash backtrace for report \(report.id.prefix(8)) to clipboard"
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                        copiedToast = nil
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Color.cyan)
+                            }
+
+                            if let reason = report.exceptionReason {
+                                Text("Reason: \(reason)")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.adTextSecondary)
+                            }
+
+                            // Callstack preview
+                            if !report.callStack.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        ForEach(report.callStack.prefix(6), id: \.self) { frame in
+                                            Text(frame)
+                                                .font(.system(size: 9, design: .monospaced))
+                                                .foregroundStyle(Color.adTextTertiary)
+                                        }
+                                    }
+                                }
+                                .padding(8)
+                                .background(Color.black.opacity(0.4))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.adCard)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.red.opacity(0.3), lineWidth: 1))
+                    }
+                }
+            }
+
+            // Live Activity Breadcrumbs Card
+            VStack(alignment: .leading, spacing: 10) {
+                Text("RECENT IN-FLIGHT BREADCRUMBS")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                let breadcrumbs = CrashReporterManager.shared.recentBreadcrumbs
+                if breadcrumbs.isEmpty {
+                    Text("No recent in-flight events.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.adTextTertiary)
+                        .padding(12)
+                } else {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(breadcrumbs.suffix(8), id: \.self) { b in
+                            Text(b)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(Color.adTextSecondary)
+                        }
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.black.opacity(0.3))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+            }
+        }
+        .onAppear {
+            refreshReports()
+        }
+    }
+
+    private func refreshReports() {
+        self.crashReports = CrashReporterManager.shared.listCrashReports()
+        self.systemReports = CrashReporterManager.shared.findSystemDiagnosticReports()
+    }
+}
+
 // MARK: - About Settings Pane
 
 private struct AboutSettingsPane: View {
@@ -2102,8 +2316,8 @@ private struct AboutSettingsPane: View {
                 .foregroundStyle(Color.adDivider)
 
             HStack(spacing: 16) {
-                Link("Documentation", destination: URL(string: "https://github.com/bytecats/adventurers")!)
-                Link("Security Model", destination: URL(string: "https://github.com/bytecats/adventurers")!)
+                Link("Documentation", destination: URL(string: "https://github.com/4cecoder/adventurers-harness")!)
+                Link("Security Model", destination: URL(string: "https://github.com/4cecoder/adventurers-harness")!)
             }
             .font(.system(size: 12))
             .foregroundStyle(Color.adOrange)
