@@ -358,10 +358,21 @@ public struct RichMessageView: View {
 
     @ViewBuilder
     private func textSegment(_ text: String) -> some View {
-        Text(LocalizedStringKey(text))
+        Text(LocalizedStringKey(sanitizedMarkdown(text)))
             .font(.body)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func sanitizedMarkdown(_ text: String) -> String {
+        // Prevent broken SwiftUI rendering when raw tool output or path brackets are unbalanced
+        var cleaned = text
+        // Ensure double newlines around markdown headers so SwiftUI renders them properly
+        let headerRegex = try? NSRegularExpression(pattern: "(?m)^(#+\\s+.*)$", options: [])
+        if let headerRegex {
+            cleaned = headerRegex.stringByReplacingMatches(in: cleaned, options: [], range: NSRange(location: 0, length: (cleaned as NSString).length), withTemplate: "\n$1\n")
+        }
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func copyToClipboard(_ text: String) {
@@ -387,7 +398,8 @@ public struct RichMessageView: View {
 
     private var parsedSegments: [ContentSegment] {
         var segments: [ContentSegment] = []
-        let pattern = #"```(\w*)\n([\s\S]*?)```"#
+        // Robust pattern matching both closed code blocks and open/streaming code blocks
+        let pattern = #"(?ms)(?:^|\n)[ \t]*```([^\n\r]*)\r?\n([\s\S]*?)(?:(?:\r?\n[ \t]*```)|\z)"#
 
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return [.text(content)]
@@ -410,13 +422,21 @@ public struct RichMessageView: View {
             // Code block
             let langRange = match.range(at: 1)
             let codeRange = match.range(at: 2)
-            let language = langRange.location != NSNotFound ? nsContent.substring(with: langRange) : ""
+            var rawLang = langRange.location != NSNotFound ? nsContent.substring(with: langRange).trimmingCharacters(in: .whitespacesAndNewlines) : ""
+            // Extract pure language token if metadata/filename is present (e.g. `swift title="Foo.swift"`)
+            if let firstToken = rawLang.components(separatedBy: .whitespaces).first {
+                rawLang = firstToken
+            }
             let code = nsContent.substring(with: codeRange)
-            segments.append(.codeBlock(
-                language: language.isEmpty ? "code" : language,
-                code: String(code.trimmingCharacters(in: .newlines)),
-                id: "block-\(match.range.location)"
-            ))
+            let trimmedCode = code.trimmingCharacters(in: .newlines)
+
+            if !trimmedCode.isEmpty || matches.count == 1 {
+                segments.append(.codeBlock(
+                    language: rawLang.isEmpty ? "code" : rawLang,
+                    code: trimmedCode,
+                    id: "block-\(match.range.location)"
+                ))
+            }
 
             lastEnd = match.range.upperBound
         }

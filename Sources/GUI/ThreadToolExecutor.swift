@@ -170,22 +170,28 @@ public struct ThreadToolCallParser: Sendable {
     public func cleanMessageContent(from text: String) -> String {
         var clean = text
 
-        // Strip XML <tool_call>...</tool_call>
-        let xmlRegex = try? NSRegularExpression(pattern: "(?s)<tool_call>[\\s\\S]*?</tool_call>", options: [])
+        // Strip XML <tool_call>...</tool_call> or unclosed <tool_call>
+        let xmlRegex = try? NSRegularExpression(pattern: "(?s)<tool_call>[\\s\\S]*?(?:</tool_call>|\\z)", options: [])
         if let xmlRegex {
             clean = xmlRegex.stringByReplacingMatches(in: clean, options: [], range: NSRange(location: 0, length: (clean as NSString).length), withTemplate: "")
         }
 
         // Strip XML <function=...>...</function> / <invoke>...</invoke>
-        let fnRegex = try? NSRegularExpression(pattern: "(?s)<(?:function|invoke)[^>]*>[\\s\\S]*?</(?:function|invoke)>", options: [])
+        let fnRegex = try? NSRegularExpression(pattern: "(?s)<(?:function|invoke)[^>]*>[\\s\\S]*?(?:</(?:function|invoke)>|\\z)", options: [])
         if let fnRegex {
             clean = fnRegex.stringByReplacingMatches(in: clean, options: [], range: NSRange(location: 0, length: (clean as NSString).length), withTemplate: "")
         }
 
-        // Strip ```tool_call ... ```
-        let mdRegex = try? NSRegularExpression(pattern: "(?s)```tool_call\\s*\\n[\\s\\S]*?\\n```", options: [])
+        // Strip ```tool_call ... ``` or unclosed ```tool_call
+        let mdRegex = try? NSRegularExpression(pattern: "(?s)```tool_call\\s*\\r?\\n[\\s\\S]*?(?:\\r?\\n```|\\z)", options: [])
         if let mdRegex {
             clean = mdRegex.stringByReplacingMatches(in: clean, options: [], range: NSRange(location: 0, length: (clean as NSString).length), withTemplate: "")
+        }
+
+        // Strip any residual orphan tags (<tool_name>, </arguments>, etc.)
+        let orphanRegex = try? NSRegularExpression(pattern: "</?(?:tool_call|tool_name|arguments|parameters|function|invoke)[^>]*>", options: [])
+        if let orphanRegex {
+            clean = orphanRegex.stringByReplacingMatches(in: clean, options: [], range: NSRange(location: 0, length: (clean as NSString).length), withTemplate: "")
         }
 
         return clean.trimmingCharacters(in: .whitespacesAndNewlines)
