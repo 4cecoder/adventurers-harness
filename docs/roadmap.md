@@ -1,11 +1,12 @@
-# Adventurers Harness — Architectural Roadmap & Microtasks
+# Adventurers Harness — Bulletproof Architectural Roadmap
 
-> **North Star**: Build the most dependable, deterministic, and high-velocity macOS-native coding agent harness on Apple Silicon.  
+> **North Star**: Build the most dependable, deterministic, and high-velocity macOS-native coding agent harness on Apple Silicon.
 > **Core Principle**: *The model proposes. The harness certifies.*
+> **Evidence Base**: IDA Pro disassembly of Codex 212MB Mach-O ARM64 binary (2,720 strings, 5 classified subsystems) + codex-rs source inspection.
 
 ---
 
-## 🗺️ High-Level Milestone Architecture
+## High-Level Milestone Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -20,302 +21,451 @@
                                        │
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Phase 2: Local Intelligence, PTY & Language Server Protocol (v1.1 – v1.3)  │
-│  • Native POSIX PTY Pseudo-Terminal with Full ANSI/VT100 Emulation          │
-│  • SourceKit-LSP & Multi-Language Server Protocol Integration                │
-│  • Local Vector Corpus Embedding & Fast Codebase Search                      │
+│  Phase 2: Bulletproof Core Engine (v1.1 – v1.3)                              │
+│  • Rule-Based Execution Policy Engine (Codex-style .rules files)            │
+│  • Granular Tool Approval Escalation (per-tool + per-session overrides)     │
+│  • Network Permission Gate (protocol-level allow/deny)                      │
+│  • SQLite-Backed Structured State Persistence                               │
+│  • Context Compaction v2 with Anchor Preservation                           │
+│  • Layered Config System (CLI → env → workspace → user → defaults)          │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Phase 3: Local Intelligence, PTY & LSP (v1.4 – v1.6)                       │
+│  • POSIX PTY Pseudo-Terminal with Full ANSI/VT100 Emulation                │
+│  • SourceKit-LSP & Multi-Language Server Protocol Integration               │
+│  • Real-Time In-Memory CompilationGate (no disk writes)                     │
+│  • Local Vector Corpus Embedding & Fast Codebase Search                     │
+│  • APFS Copy-on-Write Atomic Snapshot Rollbacks                             │
 │  • Autonomous Self-Development Dogfooding Loop                              │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Phase 3: Extensible Gate Plugins, Team Policies & 3-Way Diff (v1.4 – v1.6) │
+│  Phase 4: Extensible Gate Plugins & Team Policies (v1.7 – v2.0)             │
 │  • WebAssembly (Wasmtime) & Swift Dynamic Gate Plugin Architecture          │
-│  • Visual 3-Way Diff Resolution & APFS Snapshot Rollbacks                   │
-│  • Team Gate Policies (.adventurers/gates.json) & CI Attestation Sync       │
+│  • Visual 3-Way Diff Resolution & Conflict Resolver                         │
+│  • Repository .adventurers/gates.json Policy Parser                         │
+│  • Team Gate Attestation CLI & GitHub PR Checks Annotations                 │
+│  • OWASP Security & Credential Gate Plugin                                  │
+│  • OpenTelemetry OTLP Export Pipeline                                       │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Phase 4: Autonomous Harness Self-Modification & Eval Matrix (v2.0.0+)      │
+│  Phase 5: Autonomous Self-Modification & Eval Matrix (v2.1 – v2.5)          │
 │  • Self-Hosting Optimization under Immutable Verification Gates             │
 │  • Live SWE-bench Verified & HumanEval GUI Evaluator                        │
 │  • Hardware Telemetry (Apple Neural Engine, Metal GPU, Thermal State)       │
+│  • Plugin Marketplace with Git-Based Distribution                           │
+│  • Hotspot Optimizer for User Code                                          │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Phase 5: Multi-Agent Mesh & Distributed Swarm (v2.5.0+)                   │
+│  Phase 6: Multi-Agent Mesh & Distributed Swarm (v2.6.0+)                    │
 │  • Actor-Based Agent Mesh Protocol with P2P Unix Sockets                    │
 │  • Live Swarm Network Topology Graph & Work-Stealing Task Queue             │
 │  • Multi-Machine Apple Silicon Distributed Cluster Execution                │
+│  • CRDT Shared Context Blackboard                                           │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📋 Microtasks Breakdown
-
-### Phase 1: Foundation & Core Engine (`v1.0.0` — ✅ Completed & Verified)
+## Phase 1: Foundation & Core Engine (`v1.0.0` — Completed & Verified)
 
 - [x] **Task 1.1: Three-Panel SwiftUI Desktop Architecture**
   - **Files**: `Sources/GUI/AdventurersApp.swift`, `Sources/GUI/ThreadListView.swift`, `Sources/GUI/ThreadView.swift`
-  - **Acceptance Criteria**: Fluid 3-panel layout (Threads Sidebar, Chat/Diff Canvas, Inspector Panel), Obsidian Glass design system, 60 FPS streaming.
+  - **Acceptance Criteria**: Fluid 3-panel layout, Obsidian Glass design system, 60 FPS streaming.
   - **Microtests**: Passed `stateEngineFullLifecycle` and UI state bindings.
 
 - [x] **Task 1.2: 6-Gate Deterministic Certification Pipeline**
   - **Files**: `Sources/AdventurersCore/Gates.swift`, `Sources/AdventurersCore/Protocols.swift`
-  - **Gates Implemented**:
-    1. `SyntaxGate`: Bracket, parenthesis, and square bracket balancing with markdown fence extraction.
-    2. `RepeatGate`: Loop and repetitive duplicate submission detection via cryptographic MD5 hashing.
-    3. `CompilationGate`: Non-destructive swift type-checking and build verification.
-    4. `DiffGate`: High-risk command inspection (`rm -rf`, `sudo`, `dd`, `git push -f`) and protected file fencing (`.env`, `~/.ssh/`, `/etc/shadow`).
-    5. `MemoryGate`: POSIX `getrusage` resident set size verification bounding task memory.
-    6. `ObjectiveGate`: Immutable contract prompt keyword and budget matching.
-  - **Microtests**: Passed `syntaxGateBoundaryCases`, `repeatGateCycleDetection`, `diffGateRiskDetection`, `memoryGateEvaluation`, `objectiveGateEvaluation`.
+  - **Gates**: Syntax, Repeat, Compilation, Diff, Memory, Objective.
+  - **Microtests**: All 5 gate microtests passed.
 
 - [x] **Task 1.3: Darwin Seatbelt Kernel Sandboxing**
   - **Files**: `Sources/AdventurersCore/DarwinSandbox.swift`
-  - **Acceptance Criteria**: Kernel-enforced SBPL sandbox profile generation for read-only vs workspace-write modes.
-  - **Microtests**: Passed `darwinSandboxPathAccess` boundary tests.
+  - **Acceptance Criteria**: 3-tier sandbox profiles (read-only, workspace-write, danger-full-access).
+  - **Microtests**: Passed `darwinSandboxPathAccess`.
 
 - [x] **Task 1.4: Pure Swift Streaming Patch & Diff Engine**
   - **Files**: `Sources/AdventurersCore/DiffEngine.swift`
-  - **Acceptance Criteria**: Unified diff parser, context-aware preflight conflict detection, and atomic patch applier.
+  - **Acceptance Criteria**: Unified diff parser, preflight conflict detection, atomic patch applier.
   - **Microtests**: Passed `diffEngineMultiHunk` and `diffEngineCorruptedContext`.
 
 - [x] **Task 1.5: Sliding Window TPS Telemetry & Multi-Model Cost Ledger**
   - **Files**: `Sources/AdventurersCore/MeteringTelemetry.swift`, `Sources/GUI/WorkbenchStatusBar.swift`
-  - **Acceptance Criteria**: 1.2s rolling token velocity meter, TTFT latency tracking, context headroom gauges, and multi-tier pricing registry.
+  - **Acceptance Criteria**: 1.2s rolling token velocity, TTFT tracking, context headroom, multi-tier pricing.
   - **Microtests**: Passed `modelPricingMultiTier` and `turnMetricsAccounting`.
 
 - [x] **Task 1.6: Multi-Agent Meta-Harness Dispatch**
   - **Files**: `Sources/AdventurersCore/MetaHarness.swift`, `Sources/GUI/SettingsView.swift`
-  - **Acceptance Criteria**: Process isolation, custom CLI mappings, and environment variable isolation for `agy` (Google Antigravity), `claude` (Anthropic Claude Code), `codex`, `hermes`, `opencode`, `dsh`, `pi`, `smallctl`.
+  - **Acceptance Criteria**: Process isolation, custom CLI mappings for 8 external harnesses.
   - **Microtests**: Passed `metaHarnessRegistryDiscovery`.
 
 - [x] **Task 1.7: In-App GitHub Releases Auto-Updater & Homebrew Packaging**
-  - **Files**: `Sources/GUI/AppUpdateManager.swift`, `Formula/adventurers.rb`, `Casks/adventurers.rb`, `scripts/package_app.sh`, `.github/workflows/`
-  - **Acceptance Criteria**: Semver release comparison against GitHub Releases API, 1-click installer mounting, Homebrew formula tap, and GitHub Pages deployment.
+  - **Files**: `Sources/GUI/AppUpdateManager.swift`, `scripts/package_app.sh`
+  - **Acceptance Criteria**: Semver comparison, 1-click installer, Homebrew formula.
 
 ---
 
-### Phase 2: Local Intelligence, PTY & Language Server Protocol (`v1.1 – v1.3`)
+## Phase 2: Bulletproof Core Engine (`v1.1 – v1.3`)
 
-- [ ] **Task 2.1: POSIX PTY Pseudo-Terminal Subsystem**
+> Derived from Codex reverse engineering findings. These features close the gaps identified in `docs/codex-architecture.md`.
+
+- [ ] **Task 2.1: Rule-Based Execution Policy Engine**
+  - **Target File**: `Sources/AdventurersCore/ExecPolicy.swift`
+  - **Description**: Replace binary `RiskLevel` with a rule-based permission evaluator inspired by Codex's `codex_execpolicy`. Supports `.adventurers/rules` files with granular allow/deny/escalate decisions per command pattern.
+  - **Acceptance Criteria**:
+    - Rule file parser with `allow`, `deny`, `ask_for_approval` decisions
+    - Command pattern matching (prefix, regex, glob)
+    - Per-rule timeout and working directory constraints
+    - Policy layering: defaults → user → workspace → project
+  - **Microtest**: `execPolicyRuleMatchingAndEscalation()`
+  - **Codex Reference**: `codex-rs/execpolicy/src/`, `core/src/exec_policy.rs`
+
+- [ ] **Task 2.2: Granular Tool Approval Escalation System**
+  - **Target File**: `Sources/AdventurersCore/ToolApproval.swift`
+  - **Description**: Replace simple `RiskLevel` enum with per-tool, per-session approval overrides. Inspired by Codex's `ExecApprovalRequestEvent` and `ApplyPatchApprovalRequestEvent` patterns.
+  - **Acceptance Criteria**:
+    - Per-tool approval policy (always_allow, always_deny, ask_every_time, ask_once_per_session)
+    - Approval request/response cycle with timeout
+    - Session-level approval caching
+    - Escalation from `ask` to `deny` after N consecutive rejections
+  - **Microtest**: `toolApprovalEscalationAndSessionCaching()`
+  - **Codex Reference**: `core/src/guardian/approval_request.rs`, `tools/sandboxing/`
+
+- [ ] **Task 2.3: Network Permission Gate**
+  - **Target File**: `Sources/AdventurersCore/NetworkGate.swift`
+  - **Description**: Add network protocol-level permission checking to the gate pipeline. Codex evaluates `allow`/`deny` per `http-connect`/`https_connect` protocol. Add as Gate #7.
+  - **Acceptance Criteria**:
+    - Protocol-level filtering (HTTP, HTTPS, WebSocket, Unix socket)
+    - Per-host allow/deny rules
+    - SOCKS5 proxy support
+    - Integration with gate pipeline as `NetworkGate`
+  - **Microtest**: `networkGateProtocolFiltering()`
+  - **Codex Reference**: `core/src/network_policy_decision.rs`, `core/src/exec_policy.rs`
+
+- [ ] **Task 2.4: SQLite-Backed Structured State Persistence**
+  - **Target File**: `Sources/AdventurersCore/StateStore.swift`
+  - **Description**: Replace JSONL `EventJournal` with SQLite-backed state persistence. Codex uses `state_db` for thread metadata and `rollout` files for conversation state.
+  - **Acceptance Criteria**:
+    - SQLite database with WAL mode for concurrent reads
+    - Thread state persistence (goal, messages, gate results)
+    - Rollout serialization/deserialization
+    - Migration support for schema evolution
+  - **Microtest**: `stateStorePersistenceAndMigration()`
+  - **Codex Reference**: `core/src/state_db_bridge.rs`, `core/src/rollout.rs`, `thread-store/`
+
+- [ ] **Task 2.5: Context Compaction v2 with Anchor Preservation**
+  - **Target File**: `Sources/AdventurersCore/ContextCompactor.swift`
+  - **Description**: Upgrade `TrajectoryCompressor` to match Codex's `compact_remote_v2` with structured anchor preservation, token budget awareness, and role alternation validity.
+  - **Acceptance Criteria**:
+    - Head anchor: system prompt + task contract (protected)
+    - Tail anchor: last N turns (protected)
+    - Middle compaction with structured summary (not just truncation)
+    - Token budget pre-check before compaction trigger
+    - Role alternation validation (user/assistant/tool must alternate)
+  - **Microtest**: `contextCompactorAnchorPreservationAndRoleValidity()`
+  - **Codex Reference**: `core/src/compact_remote_v2.rs`, `core/src/compact_token_budget.rs`
+
+- [ ] **Task 2.6: Layered Configuration System**
+  - **Target File**: `Sources/AdventurersCore/ConfigStack.swift`
+  - **Description**: Replace flat `HarnessConfig` with Codex-style 5-layer config stack: CLI args → environment variables → workspace `.adventurers/config.toml` → user `~/.adventurers/config.toml` → built-in defaults.
+  - **Acceptance Criteria**:
+    - TOML config file parsing
+    - Layer precedence with merge semantics
+    - Environment variable interpolation
+    - Config schema validation
+    - Hot-reload on file change
+  - **Microtest**: `configStackLayerPrecedenceAndMerge()`
+  - **Codex Reference**: `core/src/config/`, `codex-config/`
+
+- [ ] **Task 2.7: Dangerous Command Detection Engine**
+  - **Target File**: `Sources/AdventurersCore/DangerousCommandDetector.swift`
+  - **Description**: Port Codex's `codex_shell_command::is_dangerous_command` pattern — a curated list of dangerous command prefixes with context-aware matching.
+  - **Acceptance Criteria**:
+    - Shell wrapper detection (bash, zsh, fish, sh, osascript)
+    - Package runner detection (npm run, cargo, bun)
+    - Destructive command detection (dd, mkfs, rm -rf, chmod -R 777)
+    - Pipe-to-shell detection (curl | sh, wget | bash)
+    - Integration with DiffGate and ExecPolicy
+  - **Microtest**: `dangerousCommandDetectionComprehensive()`
+  - **Codex Reference**: `core/src/exec_policy.rs` (BANNED_PREFIX_SUGGESTIONS), `shell-command/`
+
+- [ ] **Task 2.8: Phase 2 Microtest Test Suite Expansion**
+  - **Target File**: `Tests/AdventurersCoreTests/Phase2Microtests.swift`
+  - **Description**: Comprehensive unit test suite covering Tasks 2.1 through 2.7.
+
+---
+
+## Phase 3: Local Intelligence, PTY & LSP (`v1.4 – v1.6`)
+
+- [ ] **Task 3.1: POSIX PTY Pseudo-Terminal Subsystem**
   - **Target File**: `Sources/GUI/TerminalPTY.swift`
-  - **Description**: Replace basic `Process` pipes with a native macOS Pseudo-Terminal (`openpty`/`forkpty` Darwin system calls) to enable full terminal control.
-  - **Acceptance Criteria**: Emits master/slave file descriptors, handles window resize (`TIOCSWINSZ`), and supports raw terminal modes.
+  - **Description**: Replace basic `Process` pipes with native macOS Pseudo-Terminal (`openpty`/`forkpty`).
+  - **Acceptance Criteria**: Master/slave FDs, window resize (`TIOCSWINSZ`), raw terminal modes.
   - **Microtest**: `terminalPTYAllocationAndResize()`
 
-- [ ] **Task 2.2: Streamed ANSI / VT100 Escape Sequence Parser**
+- [ ] **Task 3.2: Streamed ANSI / VT100 Escape Sequence Parser**
   - **Target File**: `Sources/GUI/TerminalANSIParser.swift`
-  - **Description**: Fast tokenizing state machine parsing ANSI color codes (256-color, 24-bit TrueColor), cursor movements, and text styles.
-  - **Acceptance Criteria**: Converts raw byte streams with ESC sequences into styled `AttributedString` tokens with zero frame drops.
+  - **Description**: Fast tokenizing state machine for ANSI color codes, cursor movements, text styles.
+  - **Acceptance Criteria**: 256-color, 24-bit TrueColor, zero frame drops.
   - **Microtest**: `ansiParserColorsAndCursorEscapeCodes()`
 
-- [ ] **Task 2.3: Bi-Directional Interactive Stdin Controller**
+- [ ] **Task 3.3: Bi-Directional Interactive Stdin Controller**
   - **Target File**: `Sources/GUI/TerminalStdinController.swift`
-  - **Description**: Forward user keystrokes (Ctrl+C, Ctrl+D, arrow keys, Tab auto-complete) into running sub-processes.
-  - **Acceptance Criteria**: Interactive tools like `vim`, `htop`, `git rebase -i`, and CLI prompts respond interactively in the terminal panel.
+  - **Description**: Forward user keystrokes (Ctrl+C, Ctrl+D, arrows, Tab) into running processes.
+  - **Acceptance Criteria**: vim, htop, git rebase -i respond interactively.
   - **Microtest**: `terminalStdinKeystrokePiping()`
 
-- [ ] **Task 2.4: JSON-RPC 2.0 Asynchronous Transport Engine**
+- [ ] **Task 3.4: JSON-RPC 2.0 Asynchronous Transport Engine**
   - **Target File**: `Sources/LSP/JSONRPCTransport.swift`
-  - **Description**: Pure Swift async/await JSON-RPC 2.0 framed transport with `Content-Length` headers for Language Server Protocol communication.
-  - **Acceptance Criteria**: Serializes/deserializes LSP requests, notifications, and responses with error code handling.
+  - **Description**: Pure Swift async/await JSON-RPC 2.0 framed transport for LSP.
+  - **Acceptance Criteria**: Content-Length headers, request/notification/response serialization.
   - **Microtest**: `jsonRpcFramingAndMessageDispatch()`
 
-- [ ] **Task 2.5: Native SourceKit-LSP Client Connection**
+- [ ] **Task 3.5: Native SourceKit-LSP Client Connection**
   - **Target File**: `Sources/LSP/SourceKitLSPClient.swift`
-  - **Description**: Launches and manages background `/usr/bin/sourcekit-lsp` server instance bound to the active workspace.
-  - **Acceptance Criteria**: Sends `initialize`, `textDocument/didOpen`, `textDocument/didChange`, and receives diagnostics in real-time.
+  - **Description**: Launch and manage background `/usr/bin/sourcekit-lsp` server.
+  - **Acceptance Criteria**: initialize, didOpen, didChange, real-time diagnostics.
   - **Microtest**: `sourceKitLSPInitializeAndDiagnostics()`
 
-- [ ] **Task 2.6: Real-Time In-Memory LSP CompilationGate**
+- [ ] **Task 3.6: Real-Time In-Memory LSP CompilationGate**
   - **Target File**: `Sources/AdventurersCore/LSPCompilationGate.swift`
-  - **Description**: Preflight proposed Swift changes against SourceKit-LSP diagnostics without touching disk or running full `swift build`.
-  - **Acceptance Criteria**: Rejects syntax/type errors in under 50ms before writing changes.
+  - **Description**: Preflight Swift changes against SourceKit-LSP diagnostics without disk writes.
+  - **Acceptance Criteria**: Rejects syntax/type errors in <50ms.
   - **Microtest**: `lspCompilationGateSubSecondPreflight()`
 
-- [ ] **Task 2.7: Multi-Language LSP Support Matrix (Rust, Zig, Python)**
+- [ ] **Task 3.7: Multi-Language LSP Support Matrix**
   - **Target File**: `Sources/LSP/MultiLanguageLSPManager.swift`
-  - **Description**: Auto-detects project language and connects to `rust-analyzer` (Rust), `zls` (Zig), or `pyright` (Python) if available.
-  - **Acceptance Criteria**: Polyglot projects receive compiler diagnostics across all supported languages.
+  - **Description**: Auto-detect project language, connect to rust-analyzer, zls, pyright.
+  - **Acceptance Criteria**: Polyglot compiler diagnostics.
   - **Microtest**: `multiLanguageLSPDiscoveryAndBinding()`
 
-- [ ] **Task 2.8: SQLite Vector Embedding Store (`sqlite-vec`)**
+- [ ] **Task 3.8: SQLite Vector Embedding Store**
   - **Target File**: `Sources/Corpus/VectorStore.swift`
-  - **Description**: Embedded SQLite vector storage with Cosine similarity indexing for local project codebase embeddings.
-  - **Acceptance Criteria**: Stores 1536-dim or 384-dim embeddings with sub-5ms nearest-neighbor queries across 10,000 code chunks.
+  - **Description**: Embedded SQLite vector storage with Cosine similarity indexing.
+  - **Acceptance Criteria**: 1536-dim embeddings, sub-5ms nearest-neighbor queries.
   - **Microtest**: `vectorStoreInsertionAndCosineQuery()`
 
-- [ ] **Task 2.9: Semantic AST Code Chunker**
+- [ ] **Task 3.9: Semantic AST Code Chunker**
   - **Target File**: `Sources/Corpus/ASTChunker.swift`
-  - **Description**: Splits source code files along structural AST boundaries (classes, structs, functions, protocols) rather than arbitrary line counts.
-  - **Acceptance Criteria**: Preserves complete function signatures and docstrings in every chunk.
+  - **Description**: Split code along AST boundaries (classes, structs, functions).
+  - **Acceptance Criteria**: Preserves function signatures and docstrings.
   - **Microtest**: `astChunkerPreservesSignaturesAndContext()`
 
-- [ ] **Task 2.10: Apple Accelerate BNNS Local Embeddings Engine**
+- [ ] **Task 3.10: Apple Accelerate BNNS Local Embeddings Engine**
   - **Target File**: `Sources/Corpus/LocalEmbeddingEngine.swift`
-  - **Description**: Runs lightweight embedding models directly on Apple Silicon Neural Engine / Metal via Accelerate framework.
-  - **Acceptance Criteria**: Generates embeddings offline at >500 chunks/sec with 0 network latency.
+  - **Description**: Run lightweight embedding models on Apple Silicon Neural Engine / Metal.
+  - **Acceptance Criteria**: >500 chunks/sec offline, 0 network latency.
   - **Microtest**: `localEmbeddingGenerationSpeedAndAccuracy()`
 
-- [ ] **Task 2.11: Self-Hosted Dogfooding Loop (`/dogfood`)**
-  - **Target File**: `Sources/GUI/DogfoodManager.swift`
-  - **Description**: Automated one-click workflow where Adventurers Harness uses its own tools and gates to inspect, build, test, and package its own repository.
-  - **Acceptance Criteria**: Self-dev quick chips trigger complete preflight certification, build, and test runs with detailed progress reports.
-  - **Microtest**: `dogfoodPipelineExecutionAndSelfCheck()`
-
-- [ ] **Task 2.12: Phase 2 Microtest Test Suite Expansion**
-  - **Target File**: `Tests/AdventurersCoreTests/Phase2Microtests.swift`
-  - **Description**: Comprehensive unit test suite covering Tasks 2.1 through 2.11.
-
----
-
-### Phase 3: WebAssembly Gate Plugins, Team Policies & 3-Way Diff (`v1.4 – v1.6`)
-
-- [ ] **Task 3.1: Wasmtime WebAssembly Gate Runner**
-  - **Target File**: `Sources/AdventurersCore/WasmGateRunner.swift`
-  - **Description**: Embeds lightweight WebAssembly runtime (Wasmtime) to execute user-defined custom gate binaries in sandbox.
-  - **Acceptance Criteria**: Executes WASM bytecode with memory quotas (<64MB) and instruction timeouts (<500ms).
-  - **Microtest**: `wasmGateExecutionAndTimeoutBounding()`
-
-- [ ] **Task 3.2: Standard Gate WASI Interface Protocol**
-  - **Target File**: `Sources/AdventurersCore/WasiGateInterface.swift`
-  - **Description**: Defines standardized C/WASI ABI for custom gates written in Rust, Go, TypeScript, or Swift.
-  - **Acceptance Criteria**: Passing input JSON via stdin and reading structured `GateResult` JSON from stdout.
-  - **Microtest**: `wasiGateInterfaceJsonSerialization()`
-
-- [ ] **Task 3.3: Repository `.adventurers/gates.json` Policy Parser**
-  - **Target File**: `Sources/AdventurersCore/GatePolicyLoader.swift`
-  - **Description**: Loads declarative gate configuration committed in user repositories, allowing per-repo custom gate thresholds.
-  - **Acceptance Criteria**: Parses required gates, timeouts, memory limits, and custom WASM gate paths.
-  - **Microtest**: `gatePolicyJsonSchemaValidation()`
-
-- [ ] **Task 3.4: Visual 3-Way Merge Conflict Resolver Canvas**
-  - **Target File**: `Sources/GUI/DiffMergeView.swift`
-  - **Description**: Interactive side-by-side 3-pane merge UI (Ours / Base / Theirs) for reviewing conflicting agent edits.
-  - **Acceptance Criteria**: Visual hunk selection, manual editing, and 1-click conflict acceptance.
-  - **Microtest**: `threeWayMergeConflictDetection()`
-
-- [ ] **Task 3.5: Tree-Sitter Semantic AST Diff Visualizer**
-  - **Target File**: `Sources/GUI/SemanticDiff.swift`
-  - **Description**: Uses Tree-sitter AST parsing to highlight renamed variables, moved functions, and altered type signatures rather than raw line diffs.
-  - **Acceptance Criteria**: Distinguishes structural code changes from superficial whitespace or formatting changes.
-  - **Microtest**: `semanticDiffAstAlterationDetection()`
-
-- [ ] **Task 3.6: APFS Copy-on-Write Atomic Snapshot Rollbacks**
+- [ ] **Task 3.11: APFS Copy-on-Write Atomic Snapshot Rollbacks**
   - **Target File**: `Sources/AdventurersCore/APFSSnapshot.swift`
-  - **Description**: Leverages macOS APFS native clone (`clonefile()`) for zero-cost instant workspace snapshotting before executing high-risk agent commands.
-  - **Acceptance Criteria**: Instant sub-10ms snapshot creation and atomic rollback on gate rejection.
+  - **Description**: Leverage macOS APFS `clonefile()` for zero-cost instant workspace snapshots.
+  - **Acceptance Criteria**: Sub-10ms snapshot creation, atomic rollback on gate rejection.
   - **Microtest**: `apfsSnapshotCreationAndRollback()`
 
-- [ ] **Task 3.7: Team Gate Attestation CLI (`adventurers check-gates`)**
+- [ ] **Task 3.12: Self-Hosted Dogfooding Loop**
+  - **Target File**: `Sources/GUI/DogfoodManager.swift`
+  - **Description**: Adventurers Harness uses its own tools to inspect, build, test, and package itself.
+  - **Acceptance Criteria**: Self-dev quick chips trigger complete certification pipeline.
+  - **Microtest**: `dogfoodPipelineExecutionAndSelfCheck()`
+
+- [ ] **Task 3.13: Phase 3 Microtest Test Suite Expansion**
+  - **Target File**: `Tests/AdventurersCoreTests/Phase3Microtests.swift`
+
+---
+
+## Phase 4: Extensible Gate Plugins & Team Policies (`v1.7 – v2.0`)
+
+- [ ] **Task 4.1: Wasmtime WebAssembly Gate Runner**
+  - **Target File**: `Sources/AdventurersCore/WasmGateRunner.swift`
+  - **Description**: Embed Wasmtime to execute custom gate binaries in sandbox.
+  - **Acceptance Criteria**: <64MB memory quota, <500ms instruction timeout.
+  - **Microtest**: `wasmGateExecutionAndTimeoutBounding()`
+
+- [ ] **Task 4.2: Standard Gate WASI Interface Protocol**
+  - **Target File**: `Sources/AdventurersCore/WasiGateInterface.swift`
+  - **Description**: C/WASI ABI for custom gates in Rust, Go, TypeScript, Swift.
+  - **Acceptance Criteria**: JSON via stdin, GateResult JSON from stdout.
+  - **Microtest**: `wasiGateInterfaceJsonSerialization()`
+
+- [ ] **Task 4.3: Repository `.adventurers/gates.json` Policy Parser**
+  - **Target File**: `Sources/AdventurersCore/GatePolicyLoader.swift`
+  - **Description**: Declarative gate config committed in repos.
+  - **Acceptance Criteria**: Required gates, timeouts, memory limits, custom WASM paths.
+  - **Microtest**: `gatePolicyJsonSchemaValidation()`
+
+- [ ] **Task 4.4: Visual 3-Way Merge Conflict Resolver**
+  - **Target File**: `Sources/GUI/DiffMergeView.swift`
+  - **Description**: Interactive 3-pane merge UI (Ours / Base / Theirs).
+  - **Acceptance Criteria**: Visual hunk selection, manual editing, 1-click acceptance.
+  - **Microtest**: `threeWayMergeConflictDetection()`
+
+- [ ] **Task 4.5: Tree-Sitter Semantic AST Diff Visualizer**
+  - **Target File**: `Sources/GUI/SemanticDiff.swift`
+  - **Description**: Highlight renamed variables, moved functions, altered type signatures.
+  - **Acceptance Criteria**: Distinguishes structural from superficial changes.
+  - **Microtest**: `semanticDiffAstAlterationDetection()`
+
+- [ ] **Task 4.6: Team Gate Attestation CLI**
   - **Target File**: `Sources/CLI/GateCheckCommand.swift`
-  - **Description**: Command-line tool to run the identical 6-gate deterministic pipeline inside GitHub Actions or GitLab CI.
-  - **Acceptance Criteria**: Exits 0 on clean certification, non-zero with structured SARIF output on failures.
+  - **Description**: Run 6-gate pipeline in GitHub Actions / GitLab CI.
+  - **Acceptance Criteria**: Exit 0 on clean, non-zero with SARIF output.
   - **Microtest**: `cliGateCheckCommandExecution()`
 
-- [ ] **Task 3.8: GitHub PR Checks API Annotations Reporter**
+- [ ] **Task 4.7: GitHub PR Checks API Annotations Reporter**
   - **Target File**: `Sources/CLI/GitHubChecksReporter.swift`
-  - **Description**: Post detailed gate evaluation results as rich line annotations on GitHub Pull Requests.
-  - **Acceptance Criteria**: Highlights exact lines violating syntax, repeat, or diff gates in GitHub PR UI.
+  - **Description**: Post gate results as line annotations on GitHub PRs.
+  - **Acceptance Criteria**: Highlights exact violating lines.
   - **Microtest**: `gitHubChecksPayloadFormatting()`
 
-- [ ] **Task 3.9: OWASP Security & Credential Gate Plugin**
+- [ ] **Task 4.8: OWASP Security & Credential Gate Plugin**
   - **Target File**: `Sources/Gates/SecurityGate.swift`
-  - **Description**: Built-in security gate scanning proposed diffs for hardcoded API keys, private certificates, SQL injection vulnerabilities, and path traversal vectors.
-  - **Acceptance Criteria**: Rejects commits containing private key patterns or unsanitized shell inputs.
+  - **Description**: Scan diffs for hardcoded API keys, private certs, SQL injection.
+  - **Acceptance Criteria**: Rejects commits with private keys or unsanitized inputs.
   - **Microtest**: `securityGateCredentialLeakDetection()`
 
-- [ ] **Task 3.10: Phase 3 Microtest Test Suite Expansion**
-  - **Target File**: `Tests/AdventurersCoreTests/Phase3Microtests.swift`
-  - **Description**: Comprehensive unit test suite covering Tasks 3.1 through 3.9.
+- [ ] **Task 4.9: OpenTelemetry OTLP Export Pipeline**
+  - **Target File**: `Sources/AdventurersCore/TelemetryExporter.swift`
+  - **Description**: Export telemetry via OpenTelemetry OTLP protocol.
+  - **Acceptance Criteria**: Traces, metrics, logs exported to configurable endpoint.
+  - **Microtest**: `telemetryExporterOTLPFormat()`
+
+- [ ] **Task 4.10: Phase 4 Microtest Test Suite Expansion**
+  - **Target File**: `Tests/AdventurersCoreTests/Phase4Microtests.swift`
 
 ---
 
-### Phase 4: Autonomous Harness Self-Modification & Evaluation Matrix (`v2.0.0+`)
+## Phase 5: Autonomous Self-Modification & Evaluation Matrix (`v2.1 – v2.5`)
 
-- [ ] **Task 4.1: Immutable Sandbox Self-Hosting Mode**
+- [ ] **Task 5.1: Immutable Sandbox Self-Hosting Mode**
   - **Target File**: `Sources/AdventurersCore/SelfHostingEngine.swift`
-  - **Description**: Enables Adventurers Harness to autonomously refactor and optimize its own codebase under strict immutable sandboxing and test gates.
-  - **Acceptance Criteria**: Code modification is fenced to workspace, and automatically reverted if `swift test` fails.
+  - **Description**: Adventurers refactors its own code under strict sandboxing and test gates.
+  - **Acceptance Criteria**: Code fenced to workspace, auto-revert on `swift test` failure.
   - **Microtest**: `selfHostingEngineSafetyFencing()`
 
-- [ ] **Task 4.2: SWE-bench Verified Dataset Evaluator**
+- [ ] **Task 5.2: SWE-bench Verified Dataset Evaluator**
   - **Target File**: `Sources/Eval/SWEBenchRunner.swift`
-  - **Description**: Automated benchmark runner for SWE-bench Verified problem instances directly inside the macOS harness.
-  - **Acceptance Criteria**: Loads benchmark tasks, executes agent runs, tests patch outputs, and outputs resolve rate percentage.
+  - **Description**: Automated SWE-bench Verified benchmark runner.
+  - **Acceptance Criteria**: Loads tasks, executes agent runs, tests patches, outputs resolve rate.
   - **Microtest**: `sweBenchDatasetLoadingAndEvaluation()`
 
-- [ ] **Task 4.3: HumanEval Benchmark Runner**
+- [ ] **Task 5.3: HumanEval Benchmark Runner**
   - **Target File**: `Sources/Eval/HumanEvalRunner.swift`
-  - **Description**: In-harness test harness for HumanEval code generation benchmarks.
-  - **Acceptance Criteria**: Evaluates pass@1 and pass@5 metrics across configured models.
+  - **Description**: In-harness HumanEval code generation benchmarks.
+  - **Acceptance Criteria**: pass@1 and pass@5 metrics across configured models.
   - **Microtest**: `humanEvalPassAtOneComputation()`
 
-- [ ] **Task 4.4: Multi-Model Evaluation Matrix UI Canvas**
+- [ ] **Task 5.4: Multi-Model Evaluation Matrix UI**
   - **Target File**: `Sources/GUI/EvalMatrixView.swift`
-  - **Description**: Rich comparison matrix in GUI displaying side-by-side resolve rates, token velocity (TPS), TTFT, and cost per task across all models.
-  - **Acceptance Criteria**: Interactive sorting, CSV/JSON export, and live model comparison bar charts.
+  - **Description**: Side-by-side comparison matrix with resolve rates, TPS, TTFT, cost.
+  - **Acceptance Criteria**: Interactive sorting, CSV/JSON export, bar charts.
   - **Microtest**: `evalMatrixDataAggregation()`
 
-- [ ] **Task 4.5: Apple Silicon Hardware Telemetry Monitor**
+- [ ] **Task 5.5: Apple Silicon Hardware Telemetry Monitor**
   - **Target File**: `Sources/AdventurersCore/HardwareTelemetry.swift`
-  - **Description**: Queries Apple Silicon IOKit metrics: Neural Engine utilization, Metal GPU load, RAM pressure, and thermal throttling state.
-  - **Acceptance Criteria**: Real-time 1.0s telemetry stream rendered in status bar cluster.
+  - **Description**: Query IOKit metrics: Neural Engine, Metal GPU, RAM pressure, thermal.
+  - **Acceptance Criteria**: Real-time 1.0s telemetry in status bar.
   - **Microtest**: `hardwareTelemetryQueryIOKit()`
 
-- [ ] **Task 4.6: Autonomous Hotspot Optimizer**
+- [ ] **Task 5.6: Plugin Marketplace with Git-Based Distribution**
+  - **Target File**: `Sources/AdventurersCore/PluginMarketplace.swift`
+  - **Description**: Git-based plugin discovery, sync, and installation (Codex-style).
+  - **Acceptance Criteria**: Plugin manifest parsing, startup sync, capability negotiation.
+  - **Microtest**: `pluginMarketplaceSyncAndDiscovery()`
+  - **Codex Reference**: `core-plugins/src/installed_marketplaces.rs`, `startup_sync.rs`
+
+- [ ] **Task 5.7: Autonomous Hotspot Optimizer**
   - **Target File**: `Sources/AdventurersCore/HotspotOptimizer.swift`
-  - **Description**: Profiling agent identifying slow algorithms or high-memory routines in user code and generating optimized PR branches.
-  - **Acceptance Criteria**: Analyzes runtime traces and proposes verified algorithmic improvements.
+  - **Description**: Profile slow algorithms, propose verified optimizations.
+  - **Acceptance Criteria**: Analyzes runtime traces, generates optimized PR branches.
   - **Microtest**: `hotspotOptimizerDetection()`
 
+- [ ] **Task 5.8: Phase 5 Microtest Test Suite Expansion**
+  - **Target File**: `Tests/AdventurersCoreTests/Phase5Microtests.swift`
+
 ---
 
-### Phase 5: Multi-Agent Mesh & Distributed Swarm (`v2.5.0+`)
+## Phase 6: Multi-Agent Mesh & Distributed Swarm (`v2.6.0+`)
 
-- [ ] **Task 5.1: Actor-Based Agent Mesh Protocol (AMP)**
+- [ ] **Task 6.1: Actor-Based Agent Mesh Protocol**
   - **Target File**: `Sources/Mesh/AgentMeshProtocol.swift`
-  - **Description**: Distributed actor protocol enabling multi-agent coordination with message passing and capability negotiation.
-  - **Acceptance Criteria**: Type-safe message exchange between Orchestrator, Specialist, and Gatekeeper actors.
+  - **Description**: Distributed actor protocol with message passing and capability negotiation.
+  - **Acceptance Criteria**: Type-safe message exchange between Orchestrator, Specialist, Gatekeeper.
   - **Microtest**: `agentMeshMessageRoutingAndDispatch()`
 
-- [ ] **Task 5.2: Peer-to-Peer Local Unix Domain Socket Bus**
+- [ ] **Task 6.2: Peer-to-Peer Unix Domain Socket Bus**
   - **Target File**: `Sources/Mesh/UnixSocketBus.swift`
-  - **Description**: High-throughput IPC bus for communicating with external CLI agents and helper processes via Unix domain sockets.
-  - **Acceptance Criteria**: Sub-millisecond latency IPC message delivery with backpressure support.
+  - **Description**: High-throughput IPC for external CLI agents.
+  - **Acceptance Criteria**: Sub-millisecond latency, backpressure support.
   - **Microtest**: `unixSocketBusThroughputAndBackpressure()`
 
-- [ ] **Task 5.3: CRDT Shared Context Blackboard**
+- [ ] **Task 6.3: CRDT Shared Context Blackboard**
   - **Target File**: `Sources/Mesh/SharedBlackboard.swift`
-  - **Description**: Conflict-free replicated data type (CRDT) memory blackboard shared across concurrent agents working on distinct files.
-  - **Acceptance Criteria**: Seamless causal consistency without race conditions or lost updates.
+  - **Description**: Conflict-free replicated data type for concurrent agents.
+  - **Acceptance Criteria**: Causal consistency, no race conditions.
   - **Microtest**: `sharedBlackboardCrdtConcurrentUpdates()`
 
-- [ ] **Task 5.4: Live Swarm Network Topology Graph UI**
+- [ ] **Task 6.4: Live Swarm Network Topology Graph UI**
   - **Target File**: `Sources/GUI/SwarmTopologyView.swift`
-  - **Description**: Interactive node graph in SwiftUI visualizing active agents, sub-tasks, message channels, and gate verification statuses.
-  - **Acceptance Criteria**: Animated node graph with panning, zooming, and agent drill-down inspection.
+  - **Description**: Interactive node graph visualizing active agents and gate statuses.
+  - **Acceptance Criteria**: Animated nodes, panning, zooming, drill-down.
   - **Microtest**: `swarmTopologyGraphStateBinding()`
+
+- [ ] **Task 6.5: Phase 6 Microtest Test Suite Expansion**
+  - **Target File**: `Tests/AdventurersCoreTests/Phase6Microtests.swift`
 
 ---
 
-## 🧪 Microtest Suite Matrix
+## Microtest Suite Matrix
 
-| Test Category | Suite File | Microtests Included | Status |
-|---|---|---|---|
-| **Task Contract** | `AdventurersCoreTests.swift` | `taskContractInitialValues`, `taskContractBudgetExhaustion`, `taskContractTokenAccounting` | ✅ Passed (100%) |
-| **State Engine FSM** | `AdventurersCoreTests.swift` | `stateEngineFullLifecycle`, `stateEngineIllegalTransitions`, `stateEngineRejectionLoop` | ✅ Passed (100%) |
-| **FailChain Feedback** | `AdventurersCoreTests.swift` | `failChainMultiGateEscalation`, `failChainMessageFormatting` | ✅ Passed (100%) |
-| **6-Gate Certification** | `AdventurersCoreTests.swift` | `syntaxGateBoundaryCases`, `repeatGateCycleDetection`, `diffGateRiskDetection`, `memoryGateEvaluation`, `objectiveGateEvaluation` | ✅ Passed (100%) |
-| **Darwin Sandbox** | `AdventurersCoreTests.swift` | `darwinSandboxPathAccess` | ✅ Passed (100%) |
-| **Diff Engine** | `AdventurersCoreTests.swift` | `diffEngineMultiHunk`, `diffEngineCorruptedContext` | ✅ Passed (100%) |
-| **Trajectory Compressor**| `AdventurersCoreTests.swift` | `trajectoryCompressorAnchorPreservation` | ✅ Passed (100%) |
-| **Model Pricing & TPS** | `AdventurersCoreTests.swift` | `modelPricingMultiTier`, `turnMetricsAccounting` | ✅ Passed (100%) |
-| **Meta-Harness Registry**| `AdventurersCoreTests.swift` | `metaHarnessRegistryDiscovery` | ✅ Passed (100%) |
+| Test Category | Suite File | Status |
+|---|---|---|
+| **Task Contract** | `AdventurersCoreTests.swift` | ✅ 100% |
+| **State Engine FSM** | `AdventurersCoreTests.swift` | ✅ 100% |
+| **FailChain Feedback** | `AdventurersCoreTests.swift` | ✅ 100% |
+| **6-Gate Certification** | `AdventurersCoreTests.swift` | ✅ 100% |
+| **Darwin Sandbox** | `AdventurersCoreTests.swift` | ✅ 100% |
+| **Diff Engine** | `AdventurersCoreTests.swift` | ✅ 100% |
+| **Trajectory Compressor** | `AdventurersCoreTests.swift` | ✅ 100% |
+| **Model Pricing & TPS** | `AdventurersCoreTests.swift` | ✅ 100% |
+| **Meta-Harness Registry** | `AdventurersCoreTests.swift` | ✅ 100% |
+| **Phase 2: Exec Policy** | `Phase2Microtests.swift` | 🔲 Pending |
+| **Phase 2: Tool Approval** | `Phase2Microtests.swift` | 🔲 Pending |
+| **Phase 2: Network Gate** | `Phase2Microtests.swift` | 🔲 Pending |
+| **Phase 2: State Store** | `Phase2Microtests.swift` | 🔲 Pending |
+| **Phase 2: Context Compactor** | `Phase2Microtests.swift` | 🔲 Pending |
+| **Phase 2: Config Stack** | `Phase2Microtests.swift` | 🔲 Pending |
+| **Phase 2: Dangerous Commands** | `Phase2Microtests.swift` | 🔲 Pending |
 
 **Total Active Microtests**: **20/20 Passed (0.002s)** on macOS Apple Silicon.
+
+---
+
+## Key Design Patterns
+
+| Pattern | Description | Codex Equivalent |
+|---|---|---|
+| **The Model Proposes, The Harness Certifies** | LLM never decides completion. Deterministic gates certify. | `evaluate_gates` |
+| **Rule-Based Exec Policy** | Granular allow/deny/escalate rules per command pattern. | `codex_execpolicy` |
+| **Granular Tool Approval** | Per-tool, per-session approval with escalation. | `ExecApprovalRequestEvent` |
+| **Network Permission Gate** | Protocol-level network filtering. | `network_policy_decision` |
+| **Deterministic 6-Gate Pipeline** | Syntax → Repeat → Compilation → Diff → Memory → Objective | Custom gates |
+| **Darwin Seatbelt Sandboxing** | Kernel-enforced read/write isolation. | `codex_sandbox` |
+| **SQLite State Persistence** | Structured thread state and rollout storage. | `state_db` + `rollout` |
+| **Context Compaction v2** | Anchor-preserving history compaction. | `compact_remote_v2` |
+| **Layered Config System** | 5-layer config precedence stack. | `codex_config` |
+| **Multi-Agent Meta-Dispatch** | External sub-agent CLI execution. | `spawn_agent` / `send_input` |
+| **Sliding Window TPS Telemetry** | Rolling token velocity and cost metering. | `codex.turn.*` |
+| **Escalating FailChain Feedback** | Progressive sternness on repeated failures. | Guardian review |
+| **Contract-Based Budget** | Immutable `TaskContract` with turn/token limits. | `codex_turn_id` |
+| **In-App GitHub Auto-Updates** | Continuous release monitoring and 1-click install. | Sparkle updater |
+| **APFS Snapshot Rollbacks** | Zero-cost instant workspace snapshots. | N/A (Adventurers advantage) |
+| **OpenTelemetry Export** | OTLP-compatible telemetry pipeline. | `otel_init` |
+| **Plugin Marketplace** | Git-based plugin distribution and sync. | `core-plugins` |
