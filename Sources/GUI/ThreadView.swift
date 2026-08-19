@@ -731,7 +731,24 @@ public struct ThreadView: View {
                 state: threadVM.gateState,
                 isExpanded: $isGatesExpanded,
                 workingDirectoryName: threadVM.workingDirectoryName,
-                workingDirectory: threadVM.workingDirectory
+                workingDirectory: threadVM.workingDirectory,
+                onChooseDirectory: {
+                    if let appState, let threadID = threadVM.threadID {
+                        appState.chooseAndSetWorkingDirectory(for: threadID)
+                    } else {
+                        #if os(macOS)
+                        let panel = NSOpenPanel()
+                        panel.canChooseFiles = false
+                        panel.canChooseDirectories = true
+                        panel.allowsMultipleSelection = false
+                        panel.canCreateDirectories = true
+                        panel.prompt = "Choose Workspace"
+                        if panel.runModal() == .OK, let url = panel.url {
+                            threadVM.workingDirectory = url.path
+                        }
+                        #endif
+                    }
+                }
             )
 
             if isGatesExpanded {
@@ -813,6 +830,7 @@ struct CompactGateBar: View {
     @Binding var isExpanded: Bool
     var workingDirectoryName: String = "workspace"
     var workingDirectory: String = ""
+    var onChooseDirectory: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -836,22 +854,60 @@ struct CompactGateBar: View {
                 }
             }
 
-            // Thread Workspace Folder Scope Badge
-            HStack(spacing: 4) {
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(Color.adInfo)
+            // Thread Workspace Folder Scope Badge (Interactive Menu)
+            Menu {
+                Section("Thread Working Directory") {
+                    Text(workingDirectory.isEmpty ? workingDirectoryName : workingDirectory)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.adTextTertiary)
+                }
 
-                Text(workingDirectoryName)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.adTextSecondary)
-                    .lineLimit(1)
+                Divider()
+
+                Button {
+                    onChooseDirectory?()
+                } label: {
+                    Label("Change Working Folder...", systemImage: "folder.badge.plus")
+                }
+
+                Button {
+                    #if os(macOS)
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workingDirectory)
+                    #endif
+                } label: {
+                    Label("Reveal in Finder", systemImage: "arrow.up.forward.app")
+                }
+
+                Button {
+                    #if os(macOS)
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(workingDirectory, forType: .string)
+                    #endif
+                } label: {
+                    Label("Copy Folder Path", systemImage: "doc.on.doc")
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.adInfo)
+
+                    Text(workingDirectoryName)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.adTextSecondary)
+                        .lineLimit(1)
+
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 7))
+                        .foregroundStyle(Color.adTextTertiary)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.adOverlay)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.adOverlay)
-            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            .help("Thread Root Directory: \(workingDirectory.isEmpty ? workingDirectoryName : workingDirectory)")
+            .menuStyle(.borderlessButton)
+            .help("Click to change or reveal thread workspace (currently: \(workingDirectory.isEmpty ? workingDirectoryName : workingDirectory))")
 
             Spacer()
 

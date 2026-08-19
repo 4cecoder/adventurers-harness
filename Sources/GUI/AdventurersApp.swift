@@ -309,6 +309,47 @@ final class AppState {
         }
     }
 
+    // MARK: - Workspace Directory Management
+
+    func activeWorkingDirectory() -> String {
+        if let sel = selectedThreadID, let vm = threadViewModels[sel] {
+            return vm.workingDirectory
+        }
+        if let sel = selectedThreadID, let thread = threads.first(where: { $0.id == sel }) {
+            return thread.workingDirectory
+        }
+        return WorkspaceConfig.defaultWorkspacePath
+    }
+
+    func chooseAndSetWorkingDirectory(for threadID: UUID? = nil) {
+        #if os(macOS)
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose Workspace"
+        panel.title = "Select Project / Working Directory"
+        if panel.runModal() == .OK, let url = panel.url {
+            let chosen = url.path
+            let target = threadID ?? selectedThreadID
+            if let target {
+                updateThreadWorkingDirectory(id: target, newDirectory: chosen)
+            }
+        }
+        #endif
+    }
+
+    func updateThreadWorkingDirectory(id: UUID, newDirectory: String) {
+        if let idx = threads.firstIndex(where: { $0.id == id }) {
+            threads[idx].workingDirectory = newDirectory
+        }
+        if let tvm = threadViewModels[id] {
+            tvm.workingDirectory = newDirectory
+        }
+        ThreadStore.shared.updateWorkingDirectory(id: id, workingDirectory: newDirectory)
+    }
+
     func toggleInspector() {
         withAnimation(.easeInOut(duration: 0.2)) {
             showsInspector.toggle()
@@ -473,18 +514,50 @@ struct WorkspacePickerPill: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
+        let currentDir = appState.activeWorkingDirectory()
+        let folderName = (currentDir as NSString).lastPathComponent
+
         Menu {
-            Button("adventurers-harness (Current)") {}
-            Button("Switch Branch: main") {}
+            Section("Current Workspace Scope") {
+                Text(currentDir)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.adTextTertiary)
+            }
+
+            Divider()
+
+            Button {
+                appState.chooseAndSetWorkingDirectory()
+            } label: {
+                Label("Open Project Folder... (⌘O)", systemImage: "folder.badge.plus")
+            }
+
+            Button {
+                #if os(macOS)
+                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: currentDir)
+                #endif
+            } label: {
+                Label("Reveal in Finder", systemImage: "arrow.up.forward.app")
+            }
+
+            Button {
+                #if os(macOS)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(currentDir, forType: .string)
+                #endif
+            } label: {
+                Label("Copy Absolute Path", systemImage: "doc.on.doc")
+            }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "shippingbox.fill")
                     .font(.system(size: 10))
                     .foregroundStyle(Color.adOrange)
 
-                Text("adventurers-harness")
+                Text(folderName.isEmpty ? "workspace" : folderName)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.adTextPrimary)
+                    .lineLimit(1)
 
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))
@@ -496,6 +569,7 @@ struct WorkspacePickerPill: View {
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .menuStyle(.borderlessButton)
+        .help("Active Workspace: \(currentDir)")
     }
 }
 
@@ -1238,9 +1312,14 @@ struct AgentCommands: Commands {
 
         CommandGroup(replacing: .newItem) {
             Button("New Thread") {
-                appState.createThread()
+                appState.createThread(workingDirectory: appState.activeWorkingDirectory())
             }
             .keyboardShortcut("n", modifiers: .command)
+
+            Button("Open Project / Set Workspace...") {
+                appState.chooseAndSetWorkingDirectory()
+            }
+            .keyboardShortcut("o", modifiers: .command)
 
             Button("Spotlight Search") {
                 appState.showsCommandPalette = true

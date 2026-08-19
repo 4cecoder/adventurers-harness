@@ -369,6 +369,20 @@ public final class ThreadStore: Sendable {
         updateIndex()
     }
 
+    /// Update working directory for a thread
+    public func updateWorkingDirectory(id: UUID, workingDirectory: String) {
+        let fileURL = threadsDirectory.appendingPathComponent("\(id.uuidString).json")
+        guard let data = try? Data(contentsOf: fileURL),
+              var threadData = try? JSONDecoder().decode(PersistedThreadData.self, from: data) else {
+            return
+        }
+        threadData.workingDirectory = workingDirectory
+        if let encoded = try? JSONEncoder().encode(threadData) {
+            try? encoded.write(to: fileURL)
+        }
+        updateIndex()
+    }
+
     /// Duplicate a thread
     public func duplicateThread(id: UUID) -> ThreadItem? {
         let fileURL = threadsDirectory.appendingPathComponent("\(id.uuidString).json")
