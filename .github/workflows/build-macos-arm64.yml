@@ -95,8 +95,10 @@ jobs:
           path: |
             dist/Adventurers-macOS-arm64.dmg
             dist/Adventurers-macOS-arm64.zip
+            dist/Adventurers-macOS-arm64.tar.gz
             dist/Adventurers-macOS-arm64.dmg.sha256
             dist/Adventurers-macOS-arm64.zip.sha256
+            dist/Adventurers-macOS-arm64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -110,6 +112,8 @@ jobs:
           files: |
             dist/Adventurers-macOS-arm64.dmg
             dist/Adventurers-macOS-arm64.zip
+            dist/Adventurers-macOS-arm64.tar.gz
             dist/Adventurers-macOS-arm64.dmg.sha256
             dist/Adventurers-macOS-arm64.zip.sha256
+            dist/Adventurers-macOS-arm64.tar.gz.sha256
           generate_release_notes: true

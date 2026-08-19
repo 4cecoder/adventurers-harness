@@ -116,22 +116,26 @@ hdiutil create -volname "${APP_NAME} Harness" \
     -ov -format UDZO \
     "${DMG_PATH}"
 
-# Step 6: Package into ZIP archive
-echo "🗜 Creating ZIP distribution archive..."
+# Step 6: Package into ZIP and TAR.GZ archives
+echo "🗜 Creating ZIP & TAR.GZ distribution archives..."
 ZIP_PATH="${DIST_DIR}/${APP_NAME}-macOS-arm64.zip"
+TAR_PATH="${DIST_DIR}/${APP_NAME}-macOS-arm64.tar.gz"
 cd "${DIST_DIR}"
 zip -q -r -y "${ZIP_PATH}" "${APP_NAME}.app"
+tar -czf "${TAR_PATH}" "${APP_NAME}.app"
 
 # Step 7: Generate SHA256 checksums
 echo "🔒 Computing SHA256 checksums..."
 cd "${DIST_DIR}"
 shasum -a 256 "${APP_NAME}-macOS-arm64.dmg" > "${APP_NAME}-macOS-arm64.dmg.sha256"
 shasum -a 256 "${APP_NAME}-macOS-arm64.zip" > "${APP_NAME}-macOS-arm64.zip.sha256"
+shasum -a 256 "${APP_NAME}-macOS-arm64.tar.gz" > "${APP_NAME}-macOS-arm64.tar.gz.sha256"
 
 echo "========================================================="
 echo "✔ Successfully packaged Adventurers Harness for macOS ARM64!"
 echo "  • App Bundle: ${APP_DIR}"
 echo "  • DMG Image:  ${DMG_PATH}"
 echo "  • ZIP Archive:${ZIP_PATH}"
+echo "  • TAR Archive:${TAR_PATH}"
 echo "  • Checksum:   $(cat "${DIST_DIR}/${APP_NAME}-macOS-arm64.dmg.sha256")"
 echo "========================================================="

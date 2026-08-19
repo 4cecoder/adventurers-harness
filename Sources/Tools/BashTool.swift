@@ -42,7 +42,11 @@ public struct BashTool: Tool {
         process.standardOutput = stdout
         process.standardError = stderr
 
-        process.launch()
+        do {
+            try process.run()
+        } catch {
+            return ToolResult(output: "", error: "Failed to run command process: \(error.localizedDescription)")
+        }
 
         let finished = process.waitUntilExitOrTimeout(seconds: timeout)
 

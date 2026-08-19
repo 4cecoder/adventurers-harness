@@ -508,22 +508,24 @@ public struct TerminalOutputView: View {
     private var quickActionsBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                Text("Quick:")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.adTextTertiary)
+                Text("Self-Dev & Dogfooding:")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adOrange)
                     .padding(.leading, 4)
 
-                quickChip(label: "swift test", cmd: "swift test")
-                quickChip(label: "swift build", cmd: "swift build")
-                quickChip(label: "git status", cmd: "git status")
-                quickChip(label: "git diff", cmd: "git diff")
-                quickChip(label: "pwd & ls", cmd: "pwd && ls -la")
+                quickChip(label: "🧪 swift test", cmd: "swift test")
+                quickChip(label: "🔨 build release", cmd: "swift build -c release --triple arm64-apple-macosx15.0")
+                quickChip(label: "📦 package app (dmg/zip/tar)", cmd: "./scripts/package_app.sh 1.0.0")
+                quickChip(label: "🔍 git status & log", cmd: "git status && git log -n 5 --oneline")
+                quickChip(label: "🛡️ git diff", cmd: "git diff")
+                quickChip(label: "🎨 generate icon", cmd: "./scripts/generate_icon.sh")
+                quickChip(label: "🧹 clean & rebuild", cmd: "rm -rf .build && swift build")
                 quickChip(label: "clear", cmd: "clear")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
         }
-        .background(Color.adNavy.opacity(0.6))
+        .background(Color.adNavy.opacity(0.8))
     }
 
     private func quickChip(label: String, cmd: String) -> some View {
