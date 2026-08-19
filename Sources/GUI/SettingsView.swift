@@ -531,15 +531,25 @@ public struct SettingsView: View {
                 Divider()
                     .foregroundStyle(Color.adDivider)
 
-                // Tab items
+                // Tab items grouped by category
                 ScrollView {
-                    VStack(spacing: 2) {
-                        ForEach(SettingsTab.allCases, id: \.self) { tab in
-                            SettingsTabRow(
-                                tab: tab,
-                                isSelected: selectedTab == tab
-                            ) {
-                                selectedTab = tab
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(SettingsGroup.allCases, id: \.self) { group in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(group.rawValue)
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(Color.adTextTertiary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.bottom, 2)
+
+                                ForEach(group.tabs, id: \.self) { tab in
+                                    SettingsTabRow(
+                                        tab: tab,
+                                        isSelected: selectedTab == tab
+                                    ) {
+                                        selectedTab = tab
+                                    }
+                                }
                             }
                         }
                     }
@@ -554,7 +564,7 @@ public struct SettingsView: View {
                     Circle()
                         .fill(Color.adSuccess)
                         .frame(width: 6, height: 6)
-                    Text("OpenCode Config Synced")
+                    Text("Auto-Keyring Connected")
                         .font(.system(size: 10))
                         .foregroundStyle(Color.adTextTertiary)
                     Spacer()
@@ -563,7 +573,7 @@ public struct SettingsView: View {
                 .padding(.vertical, 8)
                 .background(Color.adNavy.opacity(0.8))
             }
-            .frame(width: 200)
+            .frame(width: 210)
             .background(Color.adNavy)
 
             // Right Settings Content Stage
@@ -594,18 +604,35 @@ public struct SettingsView: View {
                     .padding(24)
                 }
             }
-            .frame(minWidth: 500, maxWidth: .infinity)
+            .frame(minWidth: 520, maxWidth: .infinity)
             .background(Color.adBackground)
         }
-        .frame(width: 820, height: 580)
+        .frame(width: 840, height: 600)
     }
 }
 
-// MARK: - Settings Tab Row
+// MARK: - Settings Navigation Groups & Tabs
+
+private enum SettingsGroup: String, CaseIterable {
+    case engine = "ENGINE & DISPATCH"
+    case gatesAndSecurity = "GATES & SECURITY"
+    case preferences = "PREFERENCES"
+
+    var tabs: [SettingsTab] {
+        switch self {
+        case .engine:
+            return [.executionMode, .llmProvider, .metaHarness]
+        case .gatesAndSecurity:
+            return [.agents, .tools, .sandbox]
+        case .preferences:
+            return [.general, .appearance, .about]
+        }
+    }
+}
 
 private enum SettingsTab: String, CaseIterable {
-    case executionMode = "Execution & Mode"
-    case llmProvider = "Coding Plan Keys"
+    case executionMode = "Execution Strategy"
+    case llmProvider = "Cloud Coding Plans"
     case metaHarness = "Meta Harness CLIs"
     case general = "General"
     case agents = "Agents & Gates"
@@ -617,7 +644,7 @@ private enum SettingsTab: String, CaseIterable {
     var icon: String {
         switch self {
         case .executionMode: return "arrow.triangle.branch"
-        case .llmProvider: return "key.fill"
+        case .llmProvider: return "cloud.fill"
         case .metaHarness: return "terminal.fill"
         case .general: return "gearshape"
         case .agents: return "person.2.fill"
@@ -1184,35 +1211,52 @@ private struct LLMProviderSettingsPane: View {
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                     ForEach(ProviderType.allCases, id: \.self) { provider in
+                        let isSelected = model.activeProvider == provider
+                        let hasKey = (model.providerKeys[provider.rawValue]?.isEmpty == false) || (isSelected && !model.apiKey.isEmpty)
+
                         Button {
                             model.activeProvider = provider
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: provider.icon)
                                     .font(.system(size: 13))
-                                    .foregroundStyle(model.activeProvider == provider ? Color.adOrange : Color.adTextSecondary)
+                                    .foregroundStyle(isSelected ? Color.adOrange : Color.adTextSecondary)
 
-                                Text(provider.rawValue)
-                                    .font(.system(size: 12, weight: model.activeProvider == provider ? .bold : .medium))
-                                    .foregroundStyle(model.activeProvider == provider ? Color.adTextPrimary : Color.adTextSecondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(provider.rawValue)
+                                        .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+                                        .foregroundStyle(isSelected ? Color.adTextPrimary : Color.adTextSecondary)
+
+                                    HStack(spacing: 4) {
+                                        Text(planBadgeText(for: provider))
+                                            .font(.system(size: 9, weight: .medium))
+                                            .foregroundStyle(Color.adTextTertiary)
+
+                                        if provider != .local {
+                                            Text(hasKey ? "• ✓ Ready" : "• ○ Needs Key")
+                                                .font(.system(size: 9))
+                                                .foregroundStyle(hasKey ? Color.adSuccess : Color.adWarning)
+                                        }
+                                    }
+                                }
 
                                 Spacer()
 
-                                if model.activeProvider == provider {
+                                if isSelected {
                                     Image(systemName: "checkmark.circle.fill")
                                         .font(.system(size: 12))
                                         .foregroundStyle(Color.adOrange)
                                 }
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
                             .background(
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(model.activeProvider == provider ? Color.adElevated : Color.adCard.opacity(0.5))
+                                    .fill(isSelected ? Color.adElevated : Color.adCard.opacity(0.5))
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(model.activeProvider == provider ? Color.adOrange.opacity(0.6) : Color.adDivider, lineWidth: 1)
+                                    .stroke(isSelected ? Color.adOrange.opacity(0.6) : Color.adDivider, lineWidth: 1)
                             )
                         }
                         .buttonStyle(.plain)
@@ -1373,6 +1417,23 @@ private struct LLMProviderSettingsPane: View {
                         .stroke(Color.white.opacity(0.12), lineWidth: 1)
                 )
             }
+        }
+    }
+
+    private func planBadgeText(for provider: ProviderType) -> String {
+        switch provider {
+        case .opencode:
+            return "[Cloud Plan: 150k req/mo]"
+        case .opencodeZen:
+            return "[Cloud Plan: Zen]"
+        case .glm:
+            return "[Coding Plan / API]"
+        case .anthropic, .openai, .deepseek:
+            return "[Direct API Key]"
+        case .openrouter:
+            return "[Aggregator Key]"
+        case .local:
+            return "[Local Endpoint]"
         }
     }
 
