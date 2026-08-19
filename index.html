@@ -141,7 +141,8 @@
     .logo-icon {
       width: 38px;
       height: 38px;
-      background: linear-gradient(135deg, var(--primary), #EA580C);
+      background: radial-gradient(circle at 50% 35%, #1A1B22, #0B0B0E);
+      border: 1px solid var(--border-color);
       border-radius: 10px;
       display: flex;
       align-items: center;
@@ -787,8 +788,12 @@
     <div class="container header-inner">
       <a href="#" class="logo-container">
         <div class="logo-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2 L14.3 9.7 L12 12 L9.7 9.7 Z" style="fill: var(--primary)"/>
+            <path d="M22 12 L14.3 14.3 L12 12 L14.3 9.7 Z" style="fill: #EA580C"/>
+            <path d="M12 22 L9.7 14.3 L12 12 L14.3 14.3 Z" style="fill: var(--success)"/>
+            <path d="M2 12 L9.7 9.7 L12 12 L9.7 14.3 Z" style="fill: var(--accent)"/>
+            <circle cx="12" cy="12" r="2.1" fill="#0B0B0E" stroke="#fff" stroke-width="1.1"/>
           </svg>
         </div>
         <span class="logo-text">Adventurers Harness</span>
