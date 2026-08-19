@@ -303,23 +303,29 @@ public final class DictationManager: NSObject, ObservableObject {
             recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
                 guard let self = self else { return }
 
-                if let result = result {
-                    let formattedSpoken = self.formatter.format(rawText: result.bestTranscription.formattedString)
-                    self.liveTranscript = formattedSpoken
+                let transcription = result?.bestTranscription.formattedString
+                let isFinal = result?.isFinal ?? false
+                let hasError = (error != nil)
 
-                    let fullText: String
-                    if self.prefixText.isEmpty {
-                        fullText = formattedSpoken
-                    } else {
-                        fullText = "\(self.prefixText) \(formattedSpoken)"
+                DispatchQueue.main.async {
+                    if let raw = transcription {
+                        let formattedSpoken = self.formatter.format(rawText: raw)
+                        self.liveTranscript = formattedSpoken
+
+                        let fullText: String
+                        if self.prefixText.isEmpty {
+                            fullText = formattedSpoken
+                        } else {
+                            fullText = "\(self.prefixText) \(formattedSpoken)"
+                        }
+
+                        self.onTextUpdate?(fullText)
+                        self.resetSilenceTimer()
                     }
 
-                    self.onTextUpdate?(fullText)
-                    self.resetSilenceTimer()
-                }
-
-                if error != nil || (result?.isFinal ?? false) {
-                    self.stopDictation()
+                    if hasError || isFinal {
+                        self.stopDictation()
+                    }
                 }
             }
 
@@ -376,8 +382,7 @@ public final class DictationManager: NSObject, ObservableObject {
         levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             let targetLevel = self.tapHandler.level
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
+            DispatchQueue.main.async {
                 self.audioLevel = self.audioLevel * 0.4 + targetLevel * 0.6
             }
         }
@@ -392,7 +397,7 @@ public final class DictationManager: NSObject, ObservableObject {
         silenceTimer?.invalidate()
         // Auto-commit and pause after 4.5 seconds of unbroken silence
         silenceTimer = Timer.scheduledTimer(withTimeInterval: 4.5, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async {
                 self?.stopDictation()
             }
         }
