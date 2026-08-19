@@ -214,6 +214,8 @@ public final class DiffViewerState: ObservableObject {
     @Published public var searchQuery: String
     @Published public var isSearchActive: Bool
     @Published public var contextLineCount: Int
+    @Published public var showsFileSidebar: Bool
+    @Published public var isLoadingLiveDiff: Bool
 
     public var onApply: ((DiffHunk) -> Void)?
     public var onDiscard: ((DiffHunk) -> Void)?
@@ -224,6 +226,7 @@ public final class DiffViewerState: ObservableObject {
         searchQuery: String = "",
         isSearchActive: Bool = false,
         contextLineCount: Int = 3,
+        showsFileSidebar: Bool = true,
         onApply: ((DiffHunk) -> Void)? = nil,
         onDiscard: ((DiffHunk) -> Void)? = nil
     ) {
@@ -233,6 +236,8 @@ public final class DiffViewerState: ObservableObject {
         self.searchQuery = searchQuery
         self.isSearchActive = isSearchActive
         self.contextLineCount = contextLineCount
+        self.showsFileSidebar = showsFileSidebar
+        self.isLoadingLiveDiff = false
         self.onApply = onApply
         self.onDiscard = onDiscard
     }
@@ -257,17 +262,135 @@ public final class DiffViewerState: ObservableObject {
     }
 
     public func selectNextFile() {
+        guard !files.isEmpty else { return }
         let nextIdx = min(files.count - 1, selectedFileIndex + 1)
         selectedFileID = files[nextIdx].id
     }
 
     public func selectPreviousFile() {
+        guard !files.isEmpty else { return }
         let prevIdx = max(0, selectedFileIndex - 1)
         selectedFileID = files[prevIdx].id
     }
+
+    /// Loads actual git working directory diffs
+    public func loadLiveGitDiff(workspacePath: String = FileManager.default.currentDirectoryPath) {
+        Task {
+            self.isLoadingLiveDiff = true
+            let process = Process()
+            let pipe = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["diff", "HEAD", "--no-color"]
+            process.currentDirectoryURL = URL(fileURLWithPath: workspacePath)
+            process.standardOutput = pipe
+
+            do {
+                try process.run()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                if let rawDiff = String(data: data, encoding: .utf8), !rawDiff.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let parsed = GitDiffParser.parse(rawDiff)
+                    if !parsed.isEmpty {
+                        self.files = parsed
+                        if self.selectedFileID == nil || !parsed.contains(where: { $0.id == self.selectedFileID }) {
+                            self.selectedFileID = parsed.first?.id
+                        }
+                    }
+                }
+            } catch {
+                // If git fails, preserve existing seeded diffs
+            }
+            self.isLoadingLiveDiff = false
+        }
+    }
 }
 
-// MARK: - Main Diff Viewer Component
+// MARK: - Git Diff Parser
+
+public struct GitDiffParser {
+    public static func parse(_ raw: String) -> [DiffFile] {
+        var files: [DiffFile] = []
+        let rawFiles = raw.components(separatedBy: "\ndiff --git ")
+
+        for rawFile in rawFiles {
+            let block = rawFile.hasPrefix("diff --git ") ? rawFile : "diff --git " + rawFile
+            guard let file = parseSingleFile(block) else { continue }
+            files.append(file)
+        }
+        return files
+    }
+
+    private static func parseSingleFile(_ block: String) -> DiffFile? {
+        let lines = block.components(separatedBy: .newlines)
+        guard let firstLine = lines.first(where: { $0.hasPrefix("diff --git ") }) else { return nil }
+
+        // Extract file path from "diff --git a/path b/path"
+        let parts = firstLine.components(separatedBy: " ")
+        guard parts.count >= 4 else { return nil }
+        var rawPath = parts[3]
+        if rawPath.hasPrefix("b/") {
+            rawPath = String(rawPath.dropFirst(2))
+        }
+
+        var hunks: [DiffHunk] = []
+        var currentHunkLines: [DiffLine] = []
+        var currentHeader = ""
+        var oldStart = 1, oldCount = 0, newStart = 1, newCount = 0
+        var oldLine = 1, newLine = 1
+
+        for line in lines {
+            if line.hasPrefix("@@") {
+                // Save previous hunk
+                if !currentHunkLines.isEmpty {
+                    hunks.append(DiffHunk(
+                        header: currentHeader,
+                        oldStart: oldStart,
+                        oldCount: oldCount,
+                        newStart: newStart,
+                        newCount: newCount,
+                        lines: currentHunkLines
+                    ))
+                    currentHunkLines = []
+                }
+                currentHeader = line
+                // Parse @@ -A,B +C,D @@
+                let regex = try? NSRegularExpression(pattern: #"@@\s*-(\d+)(?:,(\d+))?\s*\+(\d+)(?:,(\d+))?\s*@@"#)
+                if let match = regex?.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) {
+                    if let r1 = Range(match.range(at: 1), in: line), let v = Int(line[r1]) { oldStart = v; oldLine = v }
+                    if let r2 = Range(match.range(at: 2), in: line), let v = Int(line[r2]) { oldCount = v }
+                    if let r3 = Range(match.range(at: 3), in: line), let v = Int(line[r3]) { newStart = v; newLine = v }
+                    if let r4 = Range(match.range(at: 4), in: line), let v = Int(line[r4]) { newCount = v }
+                }
+            } else if line.hasPrefix("+") && !line.hasPrefix("+++") {
+                currentHunkLines.append(DiffLine(type: .addition, content: String(line.dropFirst()), oldLineNum: nil, newLineNum: newLine))
+                newLine += 1
+            } else if line.hasPrefix("-") && !line.hasPrefix("---") {
+                currentHunkLines.append(DiffLine(type: .deletion, content: String(line.dropFirst()), oldLineNum: oldLine, newLineNum: nil))
+                oldLine += 1
+            } else if line.hasPrefix(" ") {
+                currentHunkLines.append(DiffLine(type: .context, content: String(line.dropFirst()), oldLineNum: oldLine, newLineNum: newLine))
+                oldLine += 1
+                newLine += 1
+            }
+        }
+
+        if !currentHunkLines.isEmpty {
+            hunks.append(DiffHunk(
+                header: currentHeader,
+                oldStart: oldStart,
+                oldCount: oldCount,
+                newStart: newStart,
+                newCount: newCount,
+                lines: currentHunkLines
+            ))
+        }
+
+        guard !hunks.isEmpty else { return nil }
+        return DiffFile(filePath: rawPath, hunks: hunks)
+    }
+}
+
+// MARK: - Main Full-Width Diff Viewer Component
 
 public struct DiffViewer: View {
     @ObservedObject public var state: DiffViewerState
@@ -277,38 +400,161 @@ public struct DiffViewer: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            // Unified Top Navigation Bar
-            DiffTopBar(state: state)
+        HStack(spacing: 0) {
+            // Optional Collapsible Files Sidebar
+            if state.showsFileSidebar && state.files.count > 1 {
+                DiffFileListView(state: state)
+                    .frame(width: 250)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+
+                Divider()
+                    .foregroundStyle(Color.adDivider)
+            }
+
+            // Main Diff Comparison Stage
+            VStack(spacing: 0) {
+                // Unified Top Navigation Bar
+                DiffTopBar(state: state)
+
+                Divider()
+                    .foregroundStyle(Color.adDivider)
+
+                // Expansive Diff Canvas
+                if let file = state.selectedFile {
+                    ScrollView(.vertical) {
+                        VStack(alignment: .leading, spacing: 18) {
+                            ForEach(file.hunks) { hunk in
+                                HunkView(hunk: hunk, viewMode: state.viewMode, state: state)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    // Empty state
+                    emptyStateView
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Color.adBackground)
+        .onAppear {
+            state.loadLiveGitDiff()
+        }
+    }
+
+    @ViewBuilder
+    private var emptyStateView: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "doc.text.magnifyingglass")
+                .font(.system(size: 38))
+                .foregroundStyle(Color.adTextTertiary)
+            Text("No Modified Files in Working Tree")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.adTextSecondary)
+            Text("When the agent creates or edits files, full-width diff comparisons will appear here.")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.adTextTertiary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+
+            Button("Check Live Git Diff") {
+                state.loadLiveGitDiff()
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Color.adOrange)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.adElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Diff File List Sidebar (Drawer)
+
+struct DiffFileListView: View {
+    @ObservedObject var state: DiffViewerState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Text("MODIFIED FILES (\(state.files.count))")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                Spacer()
+
+                HStack(spacing: 4) {
+                    Text("+\(state.stats.insertions)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.adSuccess)
+                    Text("-\(state.stats.deletions)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.adError)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color.adNavy.opacity(0.6))
 
             Divider()
                 .foregroundStyle(Color.adDivider)
 
-            // Main Diff Comparison Canvas
-            if let file = state.selectedFile {
-                ScrollView([.horizontal, .vertical]) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        ForEach(file.hunks) { hunk in
-                            HunkView(hunk: hunk, viewMode: state.viewMode, state: state)
+            // File items
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 2) {
+                    ForEach(state.files) { file in
+                        let isSelected = (state.selectedFileID ?? state.files.first?.id) == file.id
+                        Button {
+                            state.selectedFileID = file.id
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: file.language.icon)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(isSelected ? Color.adOrange : Color.adTextSecondary)
+                                    .frame(width: 16)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(file.fileName)
+                                        .font(.system(size: 11, weight: isSelected ? .semibold : .regular, design: .monospaced))
+                                        .foregroundStyle(isSelected ? Color.adTextPrimary : Color.adTextSecondary)
+                                        .lineLimit(1)
+
+                                    Text(file.directoryPath)
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(Color.adTextTertiary)
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+
+                                HStack(spacing: 3) {
+                                    Text("+\(file.additions)")
+                                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Color.adSuccess)
+                                    Text("-\(file.deletions)")
+                                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Color.adError)
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(isSelected ? Color.adOverlay : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
+                        .buttonStyle(.plain)
                     }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            } else {
-                // Empty state
-                VStack(spacing: 12) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 32))
-                        .foregroundStyle(Color.adTextTertiary)
-                    Text("No Modified Files in Working Tree")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Color.adTextSecondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(6)
             }
         }
-        .background(Color.adBackground)
+        .background(Color.adNavy.opacity(0.85))
     }
 }
 
@@ -319,6 +565,19 @@ struct DiffTopBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // Sidebar Toggle
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    state.showsFileSidebar.toggle()
+                }
+            } label: {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(state.showsFileSidebar ? Color.adOrange : Color.adTextTertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Toggle Files Sidebar")
+
             // File Switcher Dropdown & Nav Arrows
             HStack(spacing: 4) {
                 Button {
@@ -414,7 +673,26 @@ struct DiffTopBar: View {
 
             Spacer()
 
-            // View Mode Toggle (No vertical label wrapping)
+            // Refresh Live Git Diff
+            Button {
+                state.loadLiveGitDiff()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("Refresh")
+                        .font(.system(size: 11))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.adElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .foregroundStyle(Color.adTextSecondary)
+            }
+            .buttonStyle(.plain)
+            .help("Refresh working tree git diff")
+
+            // View Mode Toggle (Split / Unified)
             Picker("", selection: $state.viewMode) {
                 ForEach(DiffViewMode.allCases, id: \.self) { mode in
                     Text(mode.rawValue).tag(mode)
@@ -461,7 +739,7 @@ struct DiffTopBar: View {
     }
 }
 
-// MARK: - Hunk Card View
+// MARK: - Full-Width Hunk Card View
 
 struct HunkView: View {
     let hunk: DiffHunk
@@ -472,6 +750,10 @@ struct HunkView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Hunk Header Banner
             HStack(spacing: 8) {
+                Image(systemName: "number")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adInfo)
+
                 Text(hunk.header)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(Color.adInfo)
@@ -489,8 +771,8 @@ struct HunkView: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color.adSuccess)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
                     .background(Color.adSuccess.opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
 
@@ -500,14 +782,14 @@ struct HunkView: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color.adError)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
                     .background(Color.adError.opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
             .background(Color.adElevated)
 
             Divider()
@@ -524,38 +806,44 @@ struct HunkView: View {
                 VStack(spacing: 0) {
                     // Split Column Headers
                     HStack(spacing: 0) {
-                        Text("ORIGINAL")
-                            .font(.system(size: 9, weight: .bold))
+                        Text("ORIGINAL / BASE")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
                             .foregroundStyle(Color.adTextTertiary)
-                            .padding(.leading, 12)
+                            .padding(.leading, 14)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
                         Rectangle()
                             .fill(Color.adDivider)
                             .frame(width: 1)
 
-                        Text("MODIFIED")
-                            .font(.system(size: 9, weight: .bold))
+                        Text("MODIFIED / HEAD")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
                             .foregroundStyle(Color.adTextTertiary)
-                            .padding(.leading, 12)
+                            .padding(.leading, 14)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.vertical, 3)
-                    .background(Color.adNavy.opacity(0.5))
+                    .padding(.vertical, 4)
+                    .background(Color.adNavy.opacity(0.6))
 
                     Divider()
                         .foregroundStyle(Color.adDivider)
 
-                    ForEach(pairedLines(hunk.lines), id: \.offset) { _, pair in
-                        SplitLineRow(left: pair.left, right: pair.right)
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        VStack(spacing: 0) {
+                            ForEach(pairedLines(hunk.lines), id: \.offset) { _, pair in
+                                SplitLineRow(left: pair.left, right: pair.right)
+                            }
+                        }
+                        .frame(minWidth: 800, maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
         }
+        .frame(maxWidth: .infinity)
         .background(Color.adBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.adDivider, lineWidth: 1)
         )
     }
@@ -613,21 +901,21 @@ struct UnifiedLineRow: View {
             Text(line.oldLineNum.map(String.init) ?? "")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(Color.adTextTertiary)
-                .frame(width: 44, alignment: .trailing)
+                .frame(width: 46, alignment: .trailing)
                 .padding(.trailing, 6)
 
             // New line num
             Text(line.newLineNum.map(String.init) ?? "")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(Color.adTextTertiary)
-                .frame(width: 44, alignment: .trailing)
+                .frame(width: 46, alignment: .trailing)
                 .padding(.trailing, 8)
 
             // Prefix (+ / - / space)
             Text(line.type.prefix)
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundStyle(lineBorder.opacity(0.9))
-                .frame(width: 14, alignment: .center)
+                .frame(width: 16, alignment: .center)
 
             // Content
             Text(line.content)
@@ -659,7 +947,7 @@ struct SplitLineRow: View {
         HStack(spacing: 0) {
             // Left Pane (Old)
             SplitCell(line: left, side: .left)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 400, maxWidth: .infinity, alignment: .leading)
 
             // Divider
             Rectangle()
@@ -668,7 +956,7 @@ struct SplitLineRow: View {
 
             // Right Pane (New)
             SplitCell(line: right, side: .right)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 400, maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -703,14 +991,14 @@ struct SplitCell: View {
                 Text(num)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Color.adTextTertiary)
-                    .frame(width: 38, alignment: .trailing)
+                    .frame(width: 42, alignment: .trailing)
                     .padding(.trailing, 6)
 
                 // Prefix
                 Text(line.type.prefix)
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(cellBorder.opacity(0.9))
-                    .frame(width: 12, alignment: .center)
+                    .frame(width: 14, alignment: .center)
 
                 // Text
                 Text(line.content)
