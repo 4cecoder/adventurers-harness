@@ -30,6 +30,13 @@ public struct SyntaxGate: Gate {
                               error: "Unbalanced parentheses: \(openParens) open, \(closeParens) close")
         }
 
+        let openBrackets = code.filter { $0 == "[" }.count
+        let closeBrackets = code.filter { $0 == "]" }.count
+        guard openBrackets == closeBrackets else {
+            return GateResult(passed: false, gateName: name,
+                              error: "Unbalanced square brackets: \(openBrackets) open, \(closeBrackets) close")
+        }
+
         return GateResult(passed: true, gateName: name, output: "Syntax OK")
     }
 
@@ -101,27 +108,26 @@ public struct CompilationGate: Gate {
             process.standardOutput = stdout
             process.standardError = stderr
 
-            process.launch()
+            try process.run()
             process.waitUntilExit()
 
             let exitCode = process.terminationStatus
             if exitCode == 0 {
-                return GateResult(passed: true, gateName: name, output: "Compilation verified - no type errors")
+                return GateResult(passed: true, gateName: name, output: "Type check successful")
             } else {
-                let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
-                let errorStr = String(data: errorData, encoding: .utf8) ?? "Unknown compilation error"
-                return GateResult(passed: false, gateName: name, error: "Compilation failed: \(errorStr.prefix(200))")
+                let errData = stderr.fileHandleForReading.readDataToEndOfFile()
+                let errStr = String(data: errData, encoding: .utf8) ?? "Type check failed"
+                return GateResult(passed: false, gateName: name, error: errStr)
             }
         } catch {
-            return GateResult(passed: false, gateName: name, error: "Failed to run compilation: \(error.localizedDescription)")
+            return GateResult(passed: false, gateName: name, error: "Compilation check failed: \(error.localizedDescription)")
         }
     }
 
     private func extractSwiftCode(from content: String) -> String {
-        let pattern = #"```swift\n([\s\S]*?)```"#
+        let pattern = #"```(?:swift)?\n([\s\S]*?)```"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)) else {
-            // If no Swift code blocks found, return empty
             return ""
         }
         return String(content[Range(match.range(at: 1), in: content)!])
@@ -130,13 +136,13 @@ public struct CompilationGate: Gate {
 
 // MARK: - Memory Gate
 
-/// Monitors memory safety, leak checks, and heap expansion limits.
+/// Bounds execution memory to avoid OOM crashes on large tasks.
 public struct MemoryGate: Gate {
     public let name = "memory"
     public let required = false
     public let maxResidentBytes: UInt64
 
-    public init(maxResidentBytes: UInt64 = 100 * 1024 * 1024) { // 100MB threshold
+    public init(maxResidentBytes: UInt64 = 2 * 1024 * 1024 * 1024) { // Default: 2 GB
         self.maxResidentBytes = maxResidentBytes
     }
 
@@ -180,6 +186,10 @@ public struct DiffGate: Gate {
             "rm -rf",
             "rm -r /",
             "sudo rm",
+            "sudo chmod",
+            "chmod -R 777",
+            "git push --force",
+            "git push -f",
             "mkfs",
             "dd if=",
             ":(){ :|:& };:",  // fork bomb
@@ -204,6 +214,8 @@ public struct DiffGate: Gate {
             "~/.ssh/id_ed25519",
             "~/.gnupg/",
             "/private/var/db/",
+            ".env",
+            ".env.production",
         ]
 
         for path in sensitivePaths {

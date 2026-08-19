@@ -13,16 +13,21 @@ public struct TaskContract: Sendable {
 
     private var currentRound: Int = 0
 
+    public let maxTokens: Int
+    public private(set) var consumedTokens: Int = 0
+
     public init(taskID: String = UUID().uuidString, prompt: String, maxRounds: Int = 4,
-                requiredGates: [String] = ["syntax", "repeat"]) {
+                requiredGates: [String] = ["syntax", "repeat"], maxTokens: Int = 100_000) {
         self.taskID = taskID
         self.prompt = prompt
         self.maxRounds = maxRounds
         self.requiredGates = requiredGates
+        self.maxTokens = maxTokens
         self.createdAt = Date()
     }
 
     public var remainingRounds: Int { maxRounds - currentRound }
+    public var remainingTokens: Int { max(0, maxTokens - consumedTokens) }
 
     public mutating func bumpRound() throws -> Int {
         guard currentRound < maxRounds else {
@@ -31,8 +36,17 @@ public struct TaskContract: Sendable {
         currentRound += 1
         return currentRound
     }
+
+    public mutating func recordTokens(prompt: Int, completion: Int) throws {
+        let total = prompt + completion
+        guard consumedTokens + total <= maxTokens else {
+            throw ContractError.tokenBudgetExhausted(taskID: taskID, requested: consumedTokens + total, limit: maxTokens)
+        }
+        consumedTokens += total
+    }
 }
 
 public enum ContractError: Error, Sendable {
     case budgetExhausted(taskID: String)
+    case tokenBudgetExhausted(taskID: String, requested: Int, limit: Int)
 }
