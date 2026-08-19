@@ -155,10 +155,12 @@ public struct MessageInputBar: View {
     public let onClearQueue: () -> Void
     public let onClear: () -> Void
 
+    @ObservedObject private var dictation = DictationManager.shared
     @State private var showingModelPicker = false
     @State private var hoverSend = false
     @State private var hoverStop = false
     @State private var hoverPause = false
+    @State private var hoverDictate = false
 
     public init(
         text: Binding<String>,
@@ -213,6 +215,9 @@ public struct MessageInputBar: View {
 
                 // Native Glass Text input
                 textEditor
+
+                // Talkies Minimal Single-Button Dictation
+                dictationButton
 
                 // Execution Controls (Pause, Stop, Send / Queue)
                 if isGenerating {
@@ -346,6 +351,95 @@ public struct MessageInputBar: View {
         .buttonStyle(.plain)
         .onHover { hoverStop = $0 }
         .help("Stop current run (⌘.)")
+    }
+
+    // MARK: - Talkies Minimal Dictation Button
+
+    @ViewBuilder
+    private var dictationButton: some View {
+        Button(action: {
+            dictation.toggleDictation(currentText: text) { updatedText in
+                self.text = updatedText
+            }
+        }) {
+            HStack(spacing: 5) {
+                // Live RMS audio waveform meter when listening
+                if dictation.state.isListening {
+                    dictationWaveform
+                        .transition(.scale.combined(with: .opacity))
+                }
+
+                ZStack {
+                    // Pulsing glow when dictation is active
+                    if dictation.state.isListening {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [Color.red.opacity(0.6), Color.adOrange.opacity(0.0)],
+                                    center: .center,
+                                    startRadius: 4,
+                                    endRadius: 18
+                                )
+                            )
+                            .frame(width: 32, height: 32)
+                    }
+
+                    Circle()
+                        .fill(dictationButtonBackground)
+                        .frame(width: 28, height: 28)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(
+                                    dictation.state.isListening ? Color.red.opacity(0.8) :
+                                    (hoverDictate ? Color.adOrange.opacity(0.5) : Color.white.opacity(0.08)),
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(color: dictation.state.isListening ? Color.red.opacity(0.5) : .clear, radius: 4)
+
+                    Image(systemName: dictation.state.isListening ? "stop.fill" : "mic.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(dictationButtonForeground)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hoverDictate = $0 }
+        .help(dictation.state.isListening ? "Stop dictation (Auto-formats punctuation)" : "Dictate prompt (Apple Speech / Talkies audio engine)")
+        .animation(.easeInOut(duration: 0.2), value: dictation.state.isListening)
+    }
+
+    private var dictationButtonBackground: Color {
+        if dictation.state.isListening {
+            return Color.red.opacity(0.9)
+        }
+        return hoverDictate ? Color.adElevated.opacity(0.9) : Color.adElevated.opacity(0.5)
+    }
+
+    private var dictationButtonForeground: Color {
+        if dictation.state.isListening {
+            return Color.white
+        }
+        return hoverDictate ? Color.adOrange : Color.adTextSecondary
+    }
+
+    @ViewBuilder
+    private var dictationWaveform: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<4, id: \.self) { index in
+                let factor: CGFloat = [0.6, 1.0, 0.8, 0.5][index]
+                let barHeight = max(4.0, CGFloat(dictation.audioLevel) * 20.0 * factor)
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color.adOrange)
+                    .frame(width: 2.5, height: barHeight)
+                    .animation(.spring(response: 0.15, dampingFraction: 0.6), value: dictation.audioLevel)
+            }
+        }
+        .frame(height: 20)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(Color.adCard.opacity(0.7))
+        .clipShape(Capsule())
     }
 
     // MARK: - Primary Action Button (Send / Queue)
@@ -520,12 +614,23 @@ public struct MessageInputBar: View {
     @ViewBuilder
     private var inputHints: some View {
         HStack(spacing: 12) {
-            Text("Return to send")
-                .font(.system(size: 10))
-                .foregroundStyle(Color.adTextTertiary)
-            Text("Shift+Return for newline")
-                .font(.system(size: 10))
-                .foregroundStyle(Color.adTextTertiary)
+            if dictation.state.isListening {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 6, height: 6)
+                    Text("Dictating live • Say \"period\", \"comma\", \"new line\" • Click mic to stop")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.adOrange)
+                }
+            } else {
+                Text("Return to send")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.adTextTertiary)
+                Text("Shift+Return for newline")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.adTextTertiary)
+            }
             Spacer()
             if !text.isEmpty {
                 Text("\(text.count) chars")
