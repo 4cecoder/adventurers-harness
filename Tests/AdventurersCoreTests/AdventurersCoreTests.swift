@@ -392,6 +392,13 @@ struct AdventurersCoreTests {
         // MiniMax M3 (1M context limit)
         let minimax = registry.spec(for: "minimax-m3")
         #expect(minimax.contextLimit == 1_000_000)
+
+        // Meta Muse Spark Contributor ($0.10 / $0.20 per 1M, 1M context)
+        let museContributor = registry.spec(for: "muse-spark-1.2-contributor")
+        #expect(museContributor.family.contains("Contributor"))
+        #expect(museContributor.contextLimit == 1_000_000)
+        let museCost = museContributor.calculateCost(promptTokens: 1_000_000, completionTokens: 1_000_000, reasoningTokens: 0)
+        #expect(abs(museCost - 0.30) < 0.001)
     }
 
     @Test("Turn Metrics formatting and token velocity accounting")
@@ -426,7 +433,7 @@ struct AdventurersCoreTests {
         let registry = MetaHarnessRegistry.shared
         let profiles = registry.discoverProfiles()
 
-        #expect(profiles.count >= 8)
+        #expect(profiles.count >= 9)
 
         // Verify Antigravity CLI (agy) profile
         let agy = profiles.first(where: { $0.type == .antigravity })
@@ -439,6 +446,12 @@ struct AdventurersCoreTests {
         #expect(claude != nil)
         #expect(claude?.type.defaultBinaryName == "claude")
         #expect(claude?.type.defaultEnvKeyName == "ANTHROPIC_API_KEY")
+
+        // Verify Meta Muse Code (muse) profile
+        let muse = profiles.first(where: { $0.type == .muse })
+        #expect(muse != nil)
+        #expect(muse?.type.defaultBinaryName == "muse")
+        #expect(muse?.type.defaultEnvKeyName == "META_API_KEY")
 
         // Verify standard profiles
         let codex = profiles.first(where: { $0.type == .codex })

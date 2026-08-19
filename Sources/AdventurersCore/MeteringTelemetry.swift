@@ -106,6 +106,15 @@ public final class ModelPricingRegistry: Sendable {
             return ModelSpec(name: modelName, family: "OpenCode Mimo", contextLimit: 128_000, inputCostPerMillion: 0.10, outputCostPerMillion: 0.20)
         }
 
+        // Meta Muse Spark Family
+        if lower.contains("muse-spark") || lower.contains("muse") {
+            if lower.contains("contributor") {
+                return ModelSpec(name: modelName, family: "Meta Muse Spark (Contributor)", contextLimit: 1_000_000, inputCostPerMillion: 0.10, outputCostPerMillion: 0.20)
+            } else {
+                return ModelSpec(name: modelName, family: "Meta Muse Spark", contextLimit: 1_000_000, inputCostPerMillion: 1.25, outputCostPerMillion: 4.25)
+            }
+        }
+
         // Default Generic Cloud / OSS Model
         return ModelSpec(name: modelName, family: "Universal LLM", contextLimit: 128_000, inputCostPerMillion: 0.50, outputCostPerMillion: 1.50)
     }

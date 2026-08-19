@@ -653,6 +653,10 @@ public func modelCapacityInfo(for model: String) -> ModelCapacityInfo? {
     let lower = model.lowercased()
     if lower.contains("mimo-v2.5") && !lower.contains("pro") {
         return ModelCapacityInfo(label: "150k/mo", monthlyCapacity: "150,400 req/mo", badgeColor: .adSuccess, tierName: "Cheapest")
+    } else if lower.contains("muse-spark-1.2-contributor") || lower.contains("muse-spark-contributor") {
+        return ModelCapacityInfo(label: "150k/mo", monthlyCapacity: "150,000 req/mo (1M Context)", badgeColor: .adSuccess, tierName: "Contributor 1M")
+    } else if lower.contains("muse-spark") || lower.contains("muse") {
+        return ModelCapacityInfo(label: "1M Ctx", monthlyCapacity: "12,000 req/mo (1M Context)", badgeColor: .adInfo, tierName: "Meta Muse 1M")
     } else if lower.contains("deepseek-v4-flash") {
         return ModelCapacityInfo(label: "38k/mo", monthlyCapacity: "37,800 req/mo", badgeColor: .adSuccess, tierName: "Ultra Fast")
     } else if lower.contains("qwen3.7-plus") || lower.contains("hy3") {

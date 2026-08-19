@@ -47,6 +47,7 @@ public enum MetaHarnessType: String, CaseIterable, Sendable, Codable, Identifiab
     case codex = "OpenAI Codex CLI"
     case hermes = "Nous Hermes Agent"
     case opencode = "OpenCode CLI"
+    case muse = "Meta Muse Code (muse)"
     case deepseekHarness = "DeepSeek Harness (dsh)"
     case pi = "Pi Agent Harness"
     case smallctl = "SmallCTL (FAMA)"
@@ -59,6 +60,7 @@ public enum MetaHarnessType: String, CaseIterable, Sendable, Codable, Identifiab
         case .codex: return "cpu"
         case .hermes: return "sparkles"
         case .opencode: return "terminal.fill"
+        case .muse: return "sparkles.rectangle.stack"
         case .deepseekHarness: return "bolt.fill"
         case .pi: return "number"
         case .smallctl: return "shield.lefthalf.filled"
@@ -73,6 +75,7 @@ public enum MetaHarnessType: String, CaseIterable, Sendable, Codable, Identifiab
         case .codex: return "codex"
         case .hermes: return "hermes"
         case .opencode: return "opencode"
+        case .muse: return "muse"
         case .deepseekHarness: return "dsh"
         case .pi: return "pi"
         case .smallctl: return "smallctl"
@@ -87,6 +90,7 @@ public enum MetaHarnessType: String, CaseIterable, Sendable, Codable, Identifiab
         case .codex: return "CODEX_API_KEY"
         case .hermes: return "HERMES_API_KEY"
         case .opencode: return "OPENCODE_API_KEY"
+        case .muse: return "META_API_KEY"
         case .deepseekHarness: return "DEEPSEEK_API_KEY"
         case .pi: return "PI_API_KEY"
         case .smallctl: return "OPENAI_API_KEY"
@@ -106,6 +110,8 @@ public enum MetaHarnessType: String, CaseIterable, Sendable, Codable, Identifiab
             return "Staged reflection agent featuring persistent episodic memory and trajectory learning loop."
         case .opencode:
             return "Go-based multi-provider coding agent with SQLite session state and AST validation."
+        case .muse:
+            return "Meta Muse Code terminal agent featuring whole-repository generation, 1M context window, multi-agent workflows, and Muse Spark 1.2 models."
         case .deepseekHarness:
             return "Plugin-everything modular harness designed for frontier DeepSeek reasoning models."
         case .pi:
@@ -290,6 +296,8 @@ public final class MetaHarnessRunner: Sendable {
             switch profile.type {
             case .claudeCode, .antigravity, .hermes:
                 commandLine = "\(profile.binaryPath) -p '\(escapedPrompt)'"
+            case .muse:
+                commandLine = "\(profile.binaryPath) exec --json '\(escapedPrompt)'"
             default:
                 commandLine = "\(profile.binaryPath) '\(escapedPrompt)'"
             }

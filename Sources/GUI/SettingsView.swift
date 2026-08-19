@@ -95,6 +95,8 @@ public final class SettingsModel {
     public static let modelsByProvider: [ProviderType: [String]] = [
         .opencode: [
             "mimo-v2.5",
+            "muse-spark-1.2-contributor",
+            "muse-spark-1.2",
             "deepseek-v4-flash",
             "qwen3.7-plus",
             "hy3",
@@ -114,9 +116,9 @@ public final class SettingsModel {
             "grok-4.5",
             "kimi-k3"
         ],
-        .opencodeZen: ["claude-3-7-sonnet", "deepseek-r1", "o3-mini", "gemini-2.5-pro", "glm-5.3"],
+        .opencodeZen: ["claude-3-7-sonnet", "deepseek-r1", "o3-mini", "gemini-2.5-pro", "glm-5.3", "muse-spark-1.2"],
         .glm: ["glm-5.3", "glm-5.2", "glm-4.7", "glm-4-plus", "glm-4-flash"],
-        .openrouter: ["anthropic/claude-3.7-sonnet", "deepseek/deepseek-r1", "deepseek/deepseek-chat", "meta-llama/llama-3.3-70b-instruct", "qwen/qwen-2.5-coder-32b-instruct", "google/gemini-2.0-flash-001"],
+        .openrouter: ["meta/muse-spark-1.2-contributor", "meta/muse-spark-1.2", "anthropic/claude-3.7-sonnet", "deepseek/deepseek-r1", "deepseek/deepseek-chat", "meta-llama/llama-3.3-70b-instruct", "qwen/qwen-2.5-coder-32b-instruct", "google/gemini-2.0-flash-001"],
         .anthropic: ["claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
         .deepseek: ["deepseek-reasoner", "deepseek-chat"],
         .openai: ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini", "gpt-4.5-preview"],
