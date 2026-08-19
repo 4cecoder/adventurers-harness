@@ -224,6 +224,28 @@ public final class ThreadViewModel: ObservableObject {
         queuedPrompts.removeAll()
     }
 
+    public var hasCheckpoints: Bool = false
+
+    /// Roll back the workspace to the most recent pre-execution snapshot
+    @discardableResult
+    public func rollbackLatestCheckpoint(terminalManager: TerminalManager? = nil) async -> Bool {
+        guard let threadUUID = self.threadID else { return false }
+        let list = await SessionCheckpointEngine.shared.getCheckpoints(for: threadUUID)
+        guard let latest = list.last else { return false }
+        do {
+            let restored = try await SessionCheckpointEngine.shared.rollback(
+                sessionID: threadUUID,
+                checkpointID: latest.id,
+                workspacePath: self.workingDirectory
+            )
+            terminalManager?.logCommand("[Rollback Executed] Reverted \(restored.count) file(s) to checkpoint (Turn #\(latest.turnNumber)).")
+            return true
+        } catch {
+            terminalManager?.logError("[Rollback Failed] \(error.localizedDescription)")
+            return false
+        }
+    }
+
     public func checkPauseState() async {
         while isPaused && !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(120))
@@ -597,6 +619,24 @@ public final class ThreadViewModel: ObservableObject {
                     }
 
                     totalToolsExecuted += toolInvocations.count
+
+                    // Auto-Snapshot for Long-Horizon Rollback Protection
+                    if let threadUUID = self.threadID {
+                        var targetFiles: [String] = []
+                        for inv in toolInvocations {
+                            if let fp = inv.arguments["TargetFile"] as? String ?? inv.arguments["filePath"] as? String ?? inv.arguments["path"] as? String {
+                                targetFiles.append(fp)
+                            }
+                        }
+                        _ = await SessionCheckpointEngine.shared.createCheckpoint(
+                            sessionID: threadUUID,
+                            turnNumber: totalToolsExecuted,
+                            summary: "Pre-execution snapshot before: \(toolInvocations.map(\.name).joined(separator: ", "))",
+                            workspacePath: self.workingDirectory,
+                            targetFiles: targetFiles
+                        )
+                        self.hasCheckpoints = true
+                    }
 
                     // Execute tools and compound into unified message
                     var executedToolResults: [String] = []
@@ -1839,6 +1879,18 @@ public struct MultiToolCallClusterView: View {
                     ForEach(orphanResults) { res in
                         CollapsibleToolResultView(result: res)
                     }
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.adSuccess)
+                        Text("Atomic snapshot saved • 1-click rollback protected")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.adTextTertiary)
+                        Spacer()
+                    }
+                    .padding(.top, 2)
+                    .padding(.leading, 4)
                 }
                 .padding(.leading, 6)
                 .transition(.move(edge: .top).combined(with: .opacity))

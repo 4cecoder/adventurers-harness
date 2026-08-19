@@ -806,6 +806,81 @@ struct AdventurersCoreTests {
         let gateResult = await gate.evaluate(cleanOutput, context: ctx)
         #expect(gateResult.passed == true)
     }
+
+    // MARK: - 14. Session Checkpoint & Long-Horizon Task Contract Microtests
+
+    @Test("Session Checkpoint Engine creates snapshots and executes rollback")
+    func sessionCheckpointEngineRollback() async throws {
+        let engine = SessionCheckpointEngine()
+        let sessionID = UUID()
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+        try? FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+
+        let testFile = "sample.txt"
+        let testFilePath = (tempDir as NSString).appendingPathComponent(testFile)
+        try "Original Content V1".write(toFile: testFilePath, atomically: true, encoding: .utf8)
+
+        // 1. Create Checkpoint
+        let cp1 = await engine.createCheckpoint(
+            sessionID: sessionID,
+            turnNumber: 1,
+            summary: "Before modifying sample.txt",
+            workspacePath: tempDir,
+            targetFiles: [testFile]
+        )
+        #expect(cp1.turnNumber == 1)
+        #expect(cp1.snapshots.count == 1)
+        #expect(cp1.snapshots[0].content == "Original Content V1")
+
+        // 2. Modify file destructively
+        try "Destructive Content V2".write(toFile: testFilePath, atomically: true, encoding: .utf8)
+        let modified = try String(contentsOfFile: testFilePath, encoding: .utf8)
+        #expect(modified == "Destructive Content V2")
+
+        // 3. Rollback to Checkpoint V1
+        let restored = try await engine.rollback(
+            sessionID: sessionID,
+            checkpointID: cp1.id,
+            workspacePath: tempDir
+        )
+        #expect(restored.contains(testFile))
+
+        let rolledBackContent = try String(contentsOfFile: testFilePath, encoding: .utf8)
+        #expect(rolledBackContent == "Original Content V1")
+
+        try? FileManager.default.removeItem(atPath: tempDir)
+    }
+
+    @Test("Task Contract Manager lifecycle, step progression, and completion fraction")
+    func taskContractManagerProgression() async {
+        let manager = TaskContractManager()
+        let sessionID = UUID()
+
+        let contract = await manager.initializeContract(
+            sessionID: sessionID,
+            goal: "Refactor storage layer",
+            criteria: ["All tests pass", "Zero data loss"],
+            steps: ["Analyze models", "Apply migration", "Run test suite"]
+        )
+
+        #expect(contract.currentPhase == .planning)
+        #expect(contract.steps.count == 3)
+        #expect(contract.steps[0].isCurrent == true)
+        #expect(contract.progressFraction == 0.0)
+
+        // Step 1 complete -> phase transition to execution
+        let c2 = await manager.completeStep(sessionID: sessionID, stepIndex: 0)
+        #expect(c2?.steps[0].isCompleted == true)
+        #expect(c2?.steps[1].isCurrent == true)
+
+        let c3 = await manager.transitionPhase(sessionID: sessionID, to: .execution)
+        #expect(c3?.currentPhase == .execution)
+
+        // Step 2 & 3 complete -> verification
+        _ = await manager.completeStep(sessionID: sessionID, stepIndex: 1)
+        let cFinal = await manager.completeStep(sessionID: sessionID, stepIndex: 2)
+        #expect(cFinal?.progressFraction == 1.0)
+    }
 }
 
 
