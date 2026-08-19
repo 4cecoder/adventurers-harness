@@ -910,6 +910,29 @@ struct AdventurersCoreTests {
         #expect(d4.tier == .mediumAction)
         #expect(d4.recommendedTurnBudget <= 5)
     }
+
+    // MARK: - 16. Alignment & Precision Grilling Microtests
+
+    @Test("Alignment Griller detects ambiguous scope and explicit grilling commands")
+    func alignmentGrillerEvaluation() {
+        let griller = AlignmentGriller.shared
+
+        // 1. Explicit /grill-me
+        let a1 = griller.evaluateIntent(prompt: "/grill-me on the database architecture")
+        #expect(a1.requiresClarification == true)
+        #expect(a1.confidenceScore <= 0.5)
+        #expect(!a1.probes.isEmpty)
+
+        // 2. Broad underspecified overhaul
+        let a2 = griller.evaluateIntent(prompt: "make it better")
+        #expect(a2.requiresClarification == true)
+        #expect(a2.probes.first?.riskCategory == "Scope Underspecification")
+
+        // 3. Clear specific instruction
+        let a3 = griller.evaluateIntent(prompt: "Add a unit test for SessionCheckpointEngine in AdventurersCoreTests.swift")
+        #expect(a3.requiresClarification == false)
+        #expect(a3.confidenceScore >= 0.9)
+    }
 }
 
 
