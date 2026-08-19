@@ -69,6 +69,15 @@ Sources/
 └── Tests/                  # 14/14 unit test suite
 ```
 
+## Documentation
+
+- 📖 [**Getting Started (30s Quickstart)**](docs/getting-started.md)
+- 🧠 [**The 3 Inference Paradigms (Subscriptions vs API Keys vs Meta CLIs)**](docs/inference-paradigms.md)
+- 🛡️ [**Deterministic 6-Gate Pipeline & Sandbox**](docs/gates.md)
+- 🔌 [**Meta-Harness CLI Sub-Agent Dispatch**](docs/meta-harness-dispatch.md)
+- 📊 [**Telemetry & Multi-Model Cost Metering**](docs/telemetry-and-metering.md)
+- 🗺️ [**Engineering Roadmap & Task Contract Matrix**](ROADMAP.md)
+
 ## Key Design Patterns
 
 | Pattern | Description |
@@ -76,7 +85,7 @@ Sources/
 | **The Model Proposes, The Harness Certifies** | LLM never decides completion. Deterministic gates certify. |
 | **Deterministic 6-Gate Pipeline** | Syntax → Repeat → Compilation → Diff → Memory → Objective |
 | **Darwin Seatbelt Sandboxing** | Kernel-enforced read/write isolation for bash & file tools |
-| **Multi-Agent Meta-Dispatch** | Run external sub-agent CLIs (Codex, Hermes, OpenCode, dsh, Pi, smallctl) |
+| **Multi-Agent Meta-Dispatch** | Run external sub-agent CLIs (Antigravity `agy`, Claude Code `claude`, Codex, Hermes, OpenCode, dsh) |
 | **Sliding Window TPS Telemetry** | 1.2s rolling token velocity, TTFT latency, and multi-model cost ledger |
 | **Escalating FailChain Feedback** | Same failure 3x gets progressively stern escalation capsules |
 | **Contract-Based Budget** | Immutable `TaskContract` with turn and token limits |

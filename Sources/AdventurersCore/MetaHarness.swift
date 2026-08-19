@@ -118,6 +118,28 @@ public enum MetaHarnessType: String, CaseIterable, Sendable, Codable, Identifiab
     }
 }
 
+// MARK: - Meta Harness Authentication Mode
+
+/// Authentication strategy for external agent CLIs (e.g. OpenCode, Hermes, Claude, Antigravity)
+public enum MetaHarnessAuthMode: String, CaseIterable, Sendable, Codable, Identifiable {
+    public var id: String { rawValue }
+
+    /// CLI manages its own subscription, token cache, or browser OAuth session (e.g. `opencode auth login`, `claude login`, `agy` token)
+    case nativeSubscription = "CLI Native Plan / OAuth Subscription"
+    /// Injected API key passed via environment variable (e.g. `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`)
+    case injectedApiKey = "Injected Environment API Key"
+    /// Hybrid auto-detect: utilizes local auth session if logged in, otherwise injects configured API key
+    case hybrid = "Hybrid (Native Session with Key Fallback)"
+
+    public var icon: String {
+        switch self {
+        case .nativeSubscription: return "creditcard.fill"
+        case .injectedApiKey: return "key.fill"
+        case .hybrid: return "arrow.triangle.2.circlepath.circle.fill"
+        }
+    }
+}
+
 // MARK: - Meta Harness Profile
 
 public struct MetaHarnessProfile: Identifiable, Sendable, Codable {
@@ -125,6 +147,7 @@ public struct MetaHarnessProfile: Identifiable, Sendable, Codable {
     public let type: MetaHarnessType
     public var binaryPath: String
     public var apiKey: String
+    public var authMode: MetaHarnessAuthMode
     public var customArgs: [String]
     public var envVars: [String: String]
     public var isEnabled: Bool
@@ -134,6 +157,7 @@ public struct MetaHarnessProfile: Identifiable, Sendable, Codable {
         type: MetaHarnessType,
         binaryPath: String = "",
         apiKey: String = "",
+        authMode: MetaHarnessAuthMode = .hybrid,
         customArgs: [String] = [],
         envVars: [String: String] = [:],
         isEnabled: Bool = true,
@@ -142,6 +166,7 @@ public struct MetaHarnessProfile: Identifiable, Sendable, Codable {
         self.type = type
         self.binaryPath = binaryPath.isEmpty ? type.defaultBinaryName : binaryPath
         self.apiKey = apiKey
+        self.authMode = authMode
         self.customArgs = customArgs
         self.envVars = envVars
         self.isEnabled = isEnabled
@@ -237,13 +262,14 @@ public final class MetaHarnessRunner: Sendable {
         env["TERM"] = "xterm-256color"
         env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
         
-        // Inject dedicated Meta-Harness API Key if present
-        if !profile.apiKey.isEmpty {
+        // Inject dedicated Meta-Harness API Key if enabled and configured
+        if profile.authMode != .nativeSubscription && !profile.apiKey.isEmpty {
             env[profile.type.defaultEnvKeyName] = profile.apiKey
             // Also set common fallbacks if applicable
             env["OPENAI_API_KEY"] = profile.apiKey
             env["ANTHROPIC_API_KEY"] = profile.apiKey
             env["DEEPSEEK_API_KEY"] = profile.apiKey
+            env["GEMINI_API_KEY"] = profile.apiKey
         }
 
         // Custom environment variables
