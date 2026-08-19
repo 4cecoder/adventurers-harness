@@ -454,4 +454,35 @@ struct AdventurersCoreTests {
         let dsh = profiles.first(where: { $0.type == .deepseekHarness })
         #expect(dsh?.type.defaultBinaryName == "dsh")
     }
+
+    // MARK: - 10. Active Process Registry Microtests
+
+    @Test("Active Process Registry tracks and unregisters processes")
+    func activeProcessRegistryTracking() {
+        let registry = ActiveProcessRegistry.shared
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/echo")
+        proc.arguments = ["harness test"]
+
+        try? proc.run()
+        let pid = proc.processIdentifier
+        #expect(pid > 0)
+
+        registry.register(process: proc)
+        registry.unregister(process: proc)
+        registry.unregister(pid: pid)
+        proc.waitUntilExit()
+    }
+
+    @Test("Meta Harness Auth Mode classification")
+    func metaHarnessAuthModes() {
+        let nativeMode = MetaHarnessAuthMode.nativeSubscription
+        let keyMode = MetaHarnessAuthMode.injectedApiKey
+        let hybridMode = MetaHarnessAuthMode.hybrid
+
+        #expect(nativeMode.rawValue.contains("Subscription"))
+        #expect(keyMode.rawValue.contains("Injected"))
+        #expect(hybridMode.rawValue.contains("Hybrid"))
+        #expect(MetaHarnessAuthMode.allCases.count == 3)
+    }
 }
