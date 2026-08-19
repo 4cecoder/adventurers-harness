@@ -565,11 +565,14 @@ public final class ThreadViewModel: ObservableObject {
                         let tcID = UUID().uuidString
                         let trID = UUID().uuidString
 
-                        let toolCall = ThreadToolCall(id: tcID, name: inv.name, arguments: inv.argumentsSummary, status: .running)
-                        threadToolCalls.append(toolCall)
-
                         let result = await self.executeNativeTool(name: inv.name, arguments: inv.arguments)
                         let outputStr = result.error != nil ? "Error: \(result.error!)" : result.output
+
+                        let toolStatus: ThreadToolCall.ToolCallStatus = (result.error != nil)
+                            ? .failed(error: result.error!)
+                            : .succeeded(output: outputStr)
+                        let toolCall = ThreadToolCall(id: tcID, name: inv.name, arguments: inv.argumentsSummary, status: toolStatus)
+                        threadToolCalls.append(toolCall)
 
                         let toolResult = ThreadToolResult(id: trID, toolCallID: tcID, output: outputStr, isError: result.error != nil)
                         threadToolResults.append(toolResult)

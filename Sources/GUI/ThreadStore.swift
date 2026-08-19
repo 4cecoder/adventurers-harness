@@ -284,10 +284,15 @@ public final class ThreadStore: Sendable {
                     status = .succeeded(output: tc.output ?? "")
                 case "failed":
                     status = .failed(error: tc.error ?? "Failed")
-                case "running":
-                    status = .running
+                case "running", "pending":
+                    // Historical persisted tool calls from completed sessions should be resolved
+                    if let err = tc.error, !err.isEmpty {
+                        status = .failed(error: err)
+                    } else {
+                        status = .succeeded(output: tc.output ?? "")
+                    }
                 default:
-                    status = .pending
+                    status = .succeeded(output: tc.output ?? "")
                 }
                 return ThreadToolCall(
                     id: tc.id,
