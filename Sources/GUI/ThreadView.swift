@@ -437,6 +437,12 @@ public final class ThreadViewModel: ObservableObject {
             2. DIRECTORY BOUNDARY INTEGRITY: Do NOT wander outside this directory tree (e.g. into parent directories '..', sibling repositories, or system paths) unless the user's instructions explicitly and unambiguously command accessing an external path.
             3. Keep all scratch files, edits, test commands, and builds scoped to '\(threadWorkspace)'.
 
+            LONG-HORIZON AGENTIC EXECUTION PRINCIPLES (OpenCode & Hermes):
+            • STEP DISCIPLINE: For multi-step tasks, outline a concise step plan, execute one atomic change at a time, and verify with tests or compiler checks.
+            • PREFLIGHT INSPECTION: Always read existing files (`view_file`) or search symbols (`grep_search`) before proposing edits. Never make blind replacements.
+            • SELF-CORRECTION & RECOVERY: When a build, test, or tool call fails, analyze the exact error output, isolate the cause, and fix it directly. Do not repeat failed identical calls.
+            • CONCISE HIGH-VELOCITY ACTION: Focus on tool invocations and solutions. Avoid unnecessary preamble.
+
             You have the following tools available:
             1. `view_file`: Read contents of a file with line numbers (path, start_line, end_line)
             2. `write_file`: Create or completely overwrite a file (path, content)
@@ -476,7 +482,8 @@ public final class ThreadViewModel: ObservableObject {
                 llmMessages.append(Message(role: role, content: msg.content))
             }
 
-            var maxTurns = 6
+            let compactor = ContextCompactor()
+            var maxTurns = 12
             var finalContent = ""
             var totalToolsExecuted = 0
 
@@ -508,7 +515,8 @@ public final class ThreadViewModel: ObservableObject {
                 var accumulatedReasoning = ""
 
                 do {
-                    let stream = provider.stream(messages: llmMessages, config: config)
+                    let activeMessages = await compactor.compact(messages: llmMessages, contextLimit: 128_000)
+                    let stream = provider.stream(messages: activeMessages, config: config)
                     for try await chunk in stream {
                         await self.checkPauseState()
                         guard !Task.isCancelled else { break }
@@ -602,9 +610,10 @@ public final class ThreadViewModel: ObservableObject {
                         self.onMessagesChanged?(self.messages)
                     }
 
-                    // Add tool results to LLM messages for next turn
+                    // Add tool results to LLM messages for next turn (budgeted for long horizons)
+                    let budgetedResults = executedToolResults.map { ThreadToolExecutor.budgetOutput($0) }
                     llmMessages.append(Message(role: .assistant, content: accumulatedContent))
-                    llmMessages.append(Message(role: .user, content: executedToolResults.joined(separator: "\n\n")))
+                    llmMessages.append(Message(role: .user, content: budgetedResults.joined(separator: "\n\n")))
 
                 } catch {
                     let fallbackContent = accumulatedContent.isEmpty ? "⚠️ Notice: \(error.localizedDescription)" : accumulatedContent

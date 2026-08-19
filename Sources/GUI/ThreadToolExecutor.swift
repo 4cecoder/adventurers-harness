@@ -56,6 +56,28 @@ public struct ThreadToolExecutor: Sendable {
             return ToolResult(output: "", error: "Unknown tool: \(name)")
         }
     }
+
+    /// Truncates excessively large tool outputs to protect token budget on long-horizon tasks.
+    public static func budgetOutput(_ raw: String, maxLines: Int = 120, maxChars: Int = 8000) -> String {
+        if raw.count <= maxChars {
+            let lines = raw.components(separatedBy: .newlines)
+            if lines.count <= maxLines {
+                return raw
+            }
+        }
+        let lines = raw.components(separatedBy: .newlines)
+        let totalCount = lines.count
+        let headCount = min(50, totalCount / 2)
+        let tailCount = min(30, totalCount - headCount)
+        let head = lines.prefix(headCount).joined(separator: "\n")
+        let tail = lines.suffix(tailCount).joined(separator: "\n")
+        let omitted = totalCount - (headCount + tailCount)
+        return """
+        \(head)
+        ... [Output truncated: \(omitted) intermediate lines omitted for token budget — \(tailCount) trailing lines retained] ...
+        \(tail)
+        """
+    }
 }
 
 // MARK: - Tool Call Parser
