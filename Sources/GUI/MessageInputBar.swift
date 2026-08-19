@@ -208,13 +208,8 @@ public struct MessageInputBar: View {
             }
 
             HStack(alignment: .center, spacing: 8) {
-                // Execution Mode & Harness Switcher
+                // Execution Target Pill (Cloud Model or Meta Harness CLI)
                 modeAndHarnessSelector
-
-                if executionMode == .subscription || executionMode == .payAsYouGo {
-                    // Model selector (for Direct Cloud / API Providers)
-                    modelSelector
-                }
 
                 // Native Glass Text input
                 textEditor
@@ -534,6 +529,23 @@ public struct MessageInputBar: View {
                 }
             }
 
+            if executionMode == .subscription || executionMode == .payAsYouGo {
+                Section("Quick Model Switch") {
+                    ForEach(availableModels.prefix(6), id: \.self) { model in
+                        Button {
+                            selectedModel = model
+                        } label: {
+                            HStack {
+                                Text(model)
+                                if selectedModel == model {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             Section("Meta Harness CLIs (Native Zero-Config Auth)") {
                 ForEach(MetaHarnessType.allCases) { harness in
                     Button {
@@ -562,8 +574,8 @@ public struct MessageInputBar: View {
 
                 let currentLabel: String = {
                     switch executionMode {
-                    case .subscription: return "Subscription"
-                    case .payAsYouGo: return "API Key"
+                    case .subscription: return selectedModel
+                    case .payAsYouGo: return selectedModel
                     case .metaHarness: return selectedMetaHarness.defaultBinaryName
                     }
                 }()
@@ -581,8 +593,10 @@ public struct MessageInputBar: View {
                     .foregroundStyle(currentAccent)
 
                 Text(currentLabel)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.adTextPrimary)
+                    .lineLimit(1)
+                    .frame(maxWidth: 130, alignment: .leading)
 
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))

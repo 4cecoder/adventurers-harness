@@ -577,23 +577,128 @@ struct WorkspacePickerPill: View {
     }
 }
 
-// MARK: - Model Selector Menu
+// MARK: - Global Agent & Model Selector Menu
 
 struct ModelSelectorMenu: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        PaginatedSearchableCombobox(
-            selection: Bindable(appState.settingsModel).selectedModel,
-            title: "\(appState.settingsModel.activeProvider.rawValue) Models",
-            items: appState.settingsModel.modelsForActiveProvider(),
-            pageSize: 8,
-            onRefresh: {
-                Task {
-                    await appState.settingsModel.fetchLiveModelsForActiveProvider()
+        Menu {
+            Section("Execution Strategy") {
+                ForEach(ExecutionMode.allCases, id: \.self) { mode in
+                    Button {
+                        appState.settingsModel.executionMode = mode
+                    } label: {
+                        HStack {
+                            Image(systemName: mode.icon)
+                            Text(mode.rawValue)
+                            if appState.settingsModel.executionMode == mode {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
                 }
             }
-        )
+
+            if appState.settingsModel.executionMode == .metaHarness {
+                Section("Meta Harness CLIs") {
+                    ForEach(MetaHarnessType.allCases) { harness in
+                        Button {
+                            appState.settingsModel.selectedMetaHarness = harness
+                        } label: {
+                            HStack {
+                                Image(systemName: harness.icon)
+                                Text("\(harness.rawValue) \(harness.isInstalled ? "✓" : "(not installed)")")
+                                if appState.settingsModel.selectedMetaHarness == harness {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Section("Active Provider") {
+                    ForEach(LLMProviderType.allCases, id: \.self) { provider in
+                        Button {
+                            appState.settingsModel.activeProvider = provider
+                        } label: {
+                            HStack {
+                                Text(provider.rawValue)
+                                if appState.settingsModel.activeProvider == provider {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Section("\(appState.settingsModel.activeProvider.rawValue) Models") {
+                    ForEach(appState.settingsModel.modelsForActiveProvider(), id: \.self) { model in
+                        Button {
+                            appState.settingsModel.selectedModel = model
+                            appState.currentThreadViewModel.selectedModel = model
+                        } label: {
+                            HStack {
+                                Text(model)
+                                if appState.settingsModel.selectedModel == model {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                let icon: String = {
+                    switch appState.settingsModel.executionMode {
+                    case .subscription: return "creditcard.fill"
+                    case .payAsYouGo: return "key.fill"
+                    case .metaHarness: return appState.settingsModel.selectedMetaHarness.icon
+                    }
+                }()
+
+                let accent: Color = {
+                    switch appState.settingsModel.executionMode {
+                    case .subscription: return Color.cyan
+                    case .payAsYouGo: return Color.adOrange
+                    case .metaHarness: return Color.adInfo
+                    }
+                }()
+
+                let label: String = {
+                    if appState.settingsModel.executionMode == .metaHarness {
+                        return "\(appState.settingsModel.selectedMetaHarness.defaultBinaryName)"
+                    } else {
+                        return "\(appState.settingsModel.selectedModel)"
+                    }
+                }()
+
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(accent)
+
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.adTextPrimary)
+                    .lineLimit(1)
+                    .frame(maxWidth: 160, alignment: .leading)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.adElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.adDivider, lineWidth: 1)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .help("Global Model & Agent Strategy Selector")
     }
 }
 
