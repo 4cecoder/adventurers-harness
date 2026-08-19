@@ -153,7 +153,7 @@ public enum DictationState: Sendable, Equatable {
 // MARK: - Dictation Manager (Main Actor)
 
 @MainActor
-public final class DictationManager: ObservableObject {
+public final class DictationManager: NSObject, ObservableObject {
     public static let shared = DictationManager()
 
     @Published public var state: DictationState = .idle
@@ -306,8 +306,10 @@ public final class DictationManager: ObservableObject {
         levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             let targetLevel = self.tapHandler.level
-            // Smooth lerp
-            self.audioLevel = self.audioLevel * 0.4 + targetLevel * 0.6
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                self.audioLevel = self.audioLevel * 0.4 + targetLevel * 0.6
+            }
         }
     }
 
@@ -320,7 +322,9 @@ public final class DictationManager: ObservableObject {
         silenceTimer?.invalidate()
         // Auto-commit and pause after 4.5 seconds of unbroken silence
         silenceTimer = Timer.scheduledTimer(withTimeInterval: 4.5, repeats: false) { [weak self] _ in
-            self?.stopDictation()
+            Task { @MainActor [weak self] in
+                self?.stopDictation()
+            }
         }
     }
 }
