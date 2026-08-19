@@ -5,34 +5,43 @@
 
 import Foundation
 
-// MARK: - Execution Mode
+// MARK: - Execution Mode & Inference Paradigms
 
 public enum ExecutionMode: String, CaseIterable, Sendable, Codable {
-    /// Direct LLM Provider execution for code synthesis, planning, and tool calling
-    case codingPlan = "Coding Plan (Direct LLM)"
-    /// Delegated execution to external sub-harness CLIs (Codex, Hermes, OpenCode, DeepSeek Harness, etc.)
-    case metaHarness = "Meta Harness (External CLIs)"
+    /// 1. Subscription-based quota tier with API/OAuth access (Claude Pro, ChatGPT Plus, GLM Coding Plan, Gemini Advanced)
+    case subscription = "Subscription (Quota-Limited)"
+    /// 2. Pay-as-you-go direct metered API keys (OpenAI, Anthropic, OpenCode, DeepSeek, Google AI Studio)
+    case payAsYouGo = "Pay-As-You-Go (Direct API Key)"
+    /// 3. Autonomous external agent CLI binaries with built-in zero-config auth (agy, claude, codex, hermes, opencode, dsh, muse)
+    case metaHarness = "Meta Harness (CLI Native Auth)"
+
+    /// Backward compatibility alias for codingPlan
+    public static let codingPlan: ExecutionMode = .subscription
 
     public var shortLabel: String {
         switch self {
-        case .codingPlan: return "Coding Plan"
-        case .metaHarness: return "Meta Harness"
+        case .subscription: return "Subscription"
+        case .payAsYouGo: return "API Key"
+        case .metaHarness: return "Meta CLI"
         }
     }
 
     public var icon: String {
         switch self {
-        case .codingPlan: return "bolt.shield.fill"
+        case .subscription: return "creditcard.fill"
+        case .payAsYouGo: return "key.fill"
         case .metaHarness: return "arrow.triangle.branch"
         }
     }
 
     public var description: String {
         switch self {
-        case .codingPlan:
-            return "Direct API streaming with native gate certification, token compression, and local tool execution."
+        case .subscription:
+            return "Usage-limited monthly/team subscription tier with fixed quota resets (e.g. Claude Pro, ChatGPT Plus, GLM Coding Plan, Gemini Advanced)."
+        case .payAsYouGo:
+            return "Direct pay-as-you-go developer API keys with per-token metered spend and real-time TPS accounting."
         case .metaHarness:
-            return "Delegates prompts and tasks to external specialized agent harness binaries with isolated API keys and environments."
+            return "Autonomous external agent CLI binaries with built-in zero-config authentication (no user API keys required)."
         }
     }
 }
@@ -96,6 +105,29 @@ public enum MetaHarnessType: String, CaseIterable, Sendable, Codable, Identifiab
         case .smallctl: return "OPENAI_API_KEY"
         case .custom: return "AGENT_API_KEY"
         }
+    }
+
+    /// Checks whether the external CLI binary is installed on the local system.
+    public var isInstalled: Bool {
+        findInstalledBinaryPath() != nil
+    }
+
+    /// Finds the absolute path to the installed binary.
+    public func findInstalledBinaryPath() -> String? {
+        let binary = defaultBinaryName
+        let candidates = [
+            "/opt/homebrew/bin/\(binary)",
+            "/usr/local/bin/\(binary)",
+            "/usr/bin/\(binary)",
+            (FileManager.default.homeDirectoryForCurrentUser.path as NSString).appendingPathComponent(".local/bin/\(binary)"),
+            (FileManager.default.homeDirectoryForCurrentUser.path as NSString).appendingPathComponent(".cargo/bin/\(binary)")
+        ]
+        for path in candidates {
+            if FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
+        }
+        return nil
     }
 
     public var description: String {

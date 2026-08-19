@@ -690,7 +690,7 @@ private enum SettingsGroup: String, CaseIterable {
 
 private enum SettingsTab: String, CaseIterable {
     case executionMode = "Execution Strategy"
-    case llmProvider = "Cloud Coding Plans"
+    case llmProvider = "Cloud Subscriptions"
     case metaHarness = "Meta Harness CLIs"
     case general = "General"
     case dictation = "Speech & Dictation"
@@ -773,24 +773,34 @@ private struct ExecutionModeSettingsPane: View {
 
             // Mode Selector Cards
             VStack(spacing: 12) {
-                // Card 1: Direct Coding Plan
+                // Card 1: Subscription (Quota Tier)
                 modeCard(
-                    mode: .codingPlan,
-                    title: "Coding Plan Mode (Direct LLM)",
-                    subtitle: "Fast streaming token generation with native Swift gates, AST diffing, trajectory compression, and local tool execution.",
-                    icon: "bolt.shield.fill",
-                    accentColor: Color.adOrange,
+                    mode: .subscription,
+                    title: "Subscription Tier (Quota-Limited)",
+                    subtitle: "Usage-limited monthly/team subscription tier with fixed quota resets (Claude Pro, ChatGPT Plus, GLM Coding Plan, Gemini Advanced).",
+                    icon: "creditcard.fill",
+                    accentColor: Color.cyan,
                     details: "Model: \(model.selectedModel) (\(model.activeProvider.rawValue))"
                 )
 
-                // Card 2: Meta Harness External CLIs
+                // Card 2: Pay-As-You-Go API Key
+                modeCard(
+                    mode: .payAsYouGo,
+                    title: "Pay-As-You-Go Mode (Direct API Key)",
+                    subtitle: "Metered direct developer API keys with per-token spend ledger and sliding-window TPS telemetry.",
+                    icon: "key.fill",
+                    accentColor: Color.adOrange,
+                    details: "Active Provider: \(model.activeProvider.rawValue)"
+                )
+
+                // Card 3: Meta Harness External CLIs
                 modeCard(
                     mode: .metaHarness,
-                    title: "Meta Harness Mode (Sub-Agent CLIs)",
-                    subtitle: "Dispatches coding tasks to external specialized CLI harnesses (Codex, Hermes, OpenCode, dsh, Pi, SmallCTL) with isolated credentials and environment variables.",
+                    title: "Meta Harness Mode (CLI Native Auth)",
+                    subtitle: "Autonomous external CLI agents with built-in zero-config auth (no user API keys required). Auto-detects local binaries.",
                     icon: "arrow.triangle.branch",
                     accentColor: Color.adInfo,
-                    details: "Active CLI: \(model.selectedMetaHarness.rawValue) (\(model.profile(for: model.selectedMetaHarness).binaryPath))"
+                    details: "Active CLI: \(model.selectedMetaHarness.rawValue) (\(model.selectedMetaHarness.isInstalled ? "Installed: \(model.selectedMetaHarness.findInstalledBinaryPath() ?? "")" : "Not Installed"))"
                 )
             }
 
@@ -809,7 +819,7 @@ private struct ExecutionModeSettingsPane: View {
                         Text("Dedicated API Keys per Mode")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.adTextPrimary)
-                        Text("Maintain separate budget keys for direct coding plans and specialized keys for external CLI agents.")
+                        Text("Maintain separate budget keys for direct cloud subscriptions and specialized keys for external CLI agents.")
                             .font(.system(size: 11))
                             .foregroundStyle(Color.adTextSecondary)
                     }
@@ -818,7 +828,7 @@ private struct ExecutionModeSettingsPane: View {
 
                     Button {
                         model.syncKeysToMetaHarnesses()
-                        syncToast = "✓ Keys synced from Coding Plan to Meta Harnesses"
+                        syncToast = "✓ Keys synced from Cloud Subscription to Meta Harnesses"
                         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                             syncToast = nil
                         }
@@ -1090,12 +1100,12 @@ private struct MetaHarnessSettingsPane: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Color.adTextSecondary)
                         Spacer()
-                        Button("Copy Key from Coding Plan") {
+                        Button("Copy Key from Cloud Subscription") {
                             copyMatchingKey(for: selectedHarnessType)
                         }
                         .buttonStyle(.plain)
                         .font(.system(size: 10))
-                        .foregroundStyle(Color.adOrange)
+                        .foregroundStyle(Color.cyan)
                     }
 
                     SecureField("Enter distinct API key (passed as $\(selectedHarnessType.defaultEnvKeyName))...", text: Binding(

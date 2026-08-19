@@ -211,8 +211,8 @@ public struct MessageInputBar: View {
                 // Execution Mode & Harness Switcher
                 modeAndHarnessSelector
 
-                if executionMode == .codingPlan {
-                    // Model selector (for Direct Coding Plan)
+                if executionMode == .subscription || executionMode == .payAsYouGo {
+                    // Model selector (for Direct Cloud / API Providers)
                     modelSelector
                 }
 
@@ -508,21 +508,33 @@ public struct MessageInputBar: View {
     @ViewBuilder
     private var modeAndHarnessSelector: some View {
         Menu {
-            Section("Execution Engine") {
+            Section("Cloud & API Execution") {
                 Button {
-                    executionMode = .codingPlan
+                    executionMode = .subscription
                 } label: {
                     HStack {
-                        Image(systemName: "bolt.shield.fill")
-                        Text("Coding Plan (Direct LLM API)")
-                        if executionMode == .codingPlan {
+                        Image(systemName: "creditcard.fill")
+                        Text("Subscription (Quota-Limited)")
+                        if executionMode == .subscription {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+
+                Button {
+                    executionMode = .payAsYouGo
+                } label: {
+                    HStack {
+                        Image(systemName: "key.fill")
+                        Text("Pay-As-You-Go (Direct API Key)")
+                        if executionMode == .payAsYouGo {
                             Image(systemName: "checkmark")
                         }
                     }
                 }
             }
 
-            Section("Meta Harness CLIs") {
+            Section("Meta Harness CLIs (Native Zero-Config Auth)") {
                 ForEach(MetaHarnessType.allCases) { harness in
                     Button {
                         executionMode = .metaHarness
@@ -530,7 +542,7 @@ public struct MessageInputBar: View {
                     } label: {
                         HStack {
                             Image(systemName: harness.icon)
-                            Text(harness.rawValue)
+                            Text("\(harness.rawValue) \(harness.isInstalled ? "✓" : "(not installed)")")
                             if executionMode == .metaHarness && selectedMetaHarness == harness {
                                 Image(systemName: "checkmark")
                             }
@@ -540,11 +552,35 @@ public struct MessageInputBar: View {
             }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: executionMode == .codingPlan ? "bolt.shield.fill" : selectedMetaHarness.icon)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(executionMode == .codingPlan ? Color.adOrange : Color.adInfo)
+                let currentIcon: String = {
+                    switch executionMode {
+                    case .subscription: return "creditcard.fill"
+                    case .payAsYouGo: return "key.fill"
+                    case .metaHarness: return selectedMetaHarness.icon
+                    }
+                }()
 
-                Text(executionMode == .codingPlan ? "Plan" : selectedMetaHarness.defaultBinaryName)
+                let currentLabel: String = {
+                    switch executionMode {
+                    case .subscription: return "Subscription"
+                    case .payAsYouGo: return "API Key"
+                    case .metaHarness: return selectedMetaHarness.defaultBinaryName
+                    }
+                }()
+
+                let currentAccent: Color = {
+                    switch executionMode {
+                    case .subscription: return Color.cyan
+                    case .payAsYouGo: return Color.adOrange
+                    case .metaHarness: return Color.adInfo
+                    }
+                }()
+
+                Image(systemName: currentIcon)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(currentAccent)
+
+                Text(currentLabel)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.adTextPrimary)
 
@@ -558,12 +594,12 @@ public struct MessageInputBar: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(executionMode == .codingPlan ? Color.adOrange.opacity(0.4) : Color.adInfo.opacity(0.4), lineWidth: 1)
+                    .stroke(executionMode == .metaHarness ? Color.adInfo.opacity(0.4) : Color.cyan.opacity(0.4), lineWidth: 1)
             )
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .help("Switch between Direct Coding Plan (API Keys) and Meta Harness (Sub-Agent CLIs)")
+        .help("Inference Strategy: Subscriptions (Quota-based) vs API Keys (Pay-as-you-go) vs Meta Harness CLIs (Native Auth)")
     }
 
     // MARK: - Model Selector
