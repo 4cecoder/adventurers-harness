@@ -143,10 +143,14 @@ public final class CyberdeckPlayerModel {
                 }
 
                 // If no title provided, fetch video title
-                let resolvedTitle = title ?? (try? await Self.fetchVideoTitle(youtubeUrl: trimmed)) ?? "Cyberpunk Live Stream"
+                var resolvedTitle = title
+                if resolvedTitle == nil {
+                    resolvedTitle = try? await Self.fetchVideoTitle(youtubeUrl: trimmed)
+                }
+                let finalTitle = resolvedTitle ?? "Cyberpunk Live Stream"
 
                 await MainActor.run {
-                    self.currentTitle = resolvedTitle
+                    self.currentTitle = finalTitle
                     self.state = .buffering
                     self.startAVPlayer(with: streamURL)
                 }
