@@ -881,6 +881,35 @@ struct AdventurersCoreTests {
         let cFinal = await manager.completeStep(sessionID: sessionID, stepIndex: 2)
         #expect(cFinal?.progressFraction == 1.0)
     }
+
+    // MARK: - 15. Task Complexity Judger Microtests
+
+    @Test("Task Judger classifies direct questions, single tool runs, and long-horizon tasks")
+    func taskJudgerComplexityClassification() {
+        let engine = TaskJudgerEngine.shared
+
+        // 1. Fast-Path direct Q&A
+        let d1 = engine.evaluate(prompt: "What is the difference between synchronous and asynchronous tasks in Swift?")
+        #expect(d1.tier == .fastDirect)
+        #expect(d1.recommendedTurnBudget == 1)
+        #expect(d1.estimatedTokenSavingsPercent >= 80.0)
+
+        // 2. Single Tool Batch
+        let d2 = engine.evaluate(prompt: "run swift test to check failures")
+        #expect(d2.tier == .singleToolBatch)
+        #expect(d2.recommendedTurnBudget == 2)
+
+        // 3. Long-Horizon Architecture refactor
+        let d3 = engine.evaluate(prompt: "Refactor the whole storage subsystem across all files in the architecture")
+        #expect(d3.tier == .longHorizon)
+        #expect(d3.recommendedTurnBudget == 12)
+        #expect(d3.shouldInitializeTaskContract == true)
+
+        // 4. Scoped localized bug fix
+        let d4 = engine.evaluate(prompt: "Fix the nil pointer crash in LoginController.swift")
+        #expect(d4.tier == .mediumAction)
+        #expect(d4.recommendedTurnBudget <= 5)
+    }
 }
 
 

@@ -465,10 +465,28 @@ public final class ThreadViewModel: ObservableObject {
                 apiKey: apiKey
             )
 
+            let judgerDecision = TaskJudgerEngine.shared.evaluate(prompt: userText)
+            var maxTurns = judgerDecision.recommendedTurnBudget
+
+            if judgerDecision.shouldInitializeTaskContract, let threadUUID = self.threadID {
+                self.activeContract = LongHorizonTaskContract(
+                    id: threadUUID,
+                    goal: userText,
+                    currentPhase: .planning,
+                    turnBudget: judgerDecision.recommendedTurnBudget
+                )
+            } else {
+                self.activeContract = nil
+            }
+
             let threadWorkspace = self.workingDirectory
             let systemPrompt = """
             You are Adventurers Harness, an autonomous agentic pair programmer with direct access to the local codebase through native tools.
             Your thread is rooted in the working directory: \(threadWorkspace).
+
+            PIPELINE OPTIMIZATION & TASK GUIDANCE:
+            • Mode: \(judgerDecision.tier.rawValue)
+            • \(judgerDecision.systemGuidanceSnippet)
 
             WORKSPACE SCOPE & CONFINEMENT RULES:
             1. SCOPE RETENTION: All relative file paths and tool calls (view_file, write_file, edit_file, list_dir, grep_search, bash) MUST resolve relative to and operate strictly inside '\(threadWorkspace)' by default.
@@ -521,7 +539,6 @@ public final class ThreadViewModel: ObservableObject {
             }
 
             let compactor = ContextCompactor()
-            var maxTurns = 12
             var finalContent = ""
             var totalToolsExecuted = 0
 
@@ -533,6 +550,7 @@ public final class ThreadViewModel: ObservableObject {
                 estimatedPromptTokens: estimatedPromptTokens
             )
 
+            terminalManager?.logCommand("[Task Judger] Tier: \(judgerDecision.tier.rawValue) | Budget: \(judgerDecision.recommendedTurnBudget) turns | Est. Savings: ~\(Int(judgerDecision.estimatedTokenSavingsPercent))%")
             terminalManager?.logCommand("[Agent Dispatch] Provider: \(providerType.rawValue) | Model: \(model)")
 
             let agentMessageID = UUID().uuidString
