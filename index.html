@@ -690,6 +690,91 @@
       .terminal-body { padding: 18px 16px; font-size: 0.8rem; }
       .copy-btn span { display: none; }
     }
+
+    /* Philosophy: model vs. pipeline */
+    .philosophy-section {
+      margin-bottom: var(--section-gap);
+    }
+
+    .philosophy-bar-labels {
+      display: flex;
+      gap: 24px;
+      margin-top: 44px;
+      margin-bottom: 14px;
+    }
+
+    .philosophy-label {
+      flex: 0 0 auto;
+    }
+
+    .philosophy-label:last-child {
+      flex: 1;
+    }
+
+    .philosophy-label strong {
+      display: block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--label-color, var(--primary));
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+
+    .philosophy-label span {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+      display: block;
+      max-width: 260px;
+    }
+
+    .philosophy-bar {
+      display: flex;
+      height: 22px;
+      border-radius: 9999px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      background: var(--bg-card);
+    }
+
+    .philosophy-bar-fill {
+      flex: 0 0 6%;
+      background: linear-gradient(135deg, var(--primary), #EA580C);
+      box-shadow: 0 0 16px var(--primary-glow);
+    }
+
+    .philosophy-bar-rest {
+      flex: 1;
+      background: linear-gradient(90deg, var(--accent), var(--purple) 55%, var(--success));
+      opacity: 0.9;
+    }
+
+    .philosophy-quote {
+      margin-top: 32px;
+      padding: 18px 22px;
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .philosophy-quote .prompt-sym {
+      margin-right: 8px;
+    }
+
+    @media (max-width: 640px) {
+      .philosophy-bar-labels {
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .philosophy-label span {
+        max-width: none;
+      }
+    }
   </style>
 </head>
 <body>
@@ -760,6 +845,35 @@
           <p class="success-text">✔ Adventurers.app installed to /opt/homebrew/bin/adventurers</p>
           <p><span class="prompt-sym">❯</span> adventurers</p>
         </div>
+      </div>
+    </section>
+
+    <!-- Our Take on AI: the model is the smallest part of the system -->
+    <section class="philosophy-section reveal" id="philosophy">
+      <div class="section-head">
+        <span class="section-eyebrow" style="--eyebrow-color: var(--success)">// our take on ai</span>
+        <h2>The model is the smallest part of the system.</h2>
+        <p>Every coding agent markets the model. We think that's the wrong bet — models are stochastic and occasionally wrong no matter how capable they get. Adventurers Harness spends its engineering budget on the other side of the equation: deterministic gates that catch what the model gets wrong, every single time.</p>
+      </div>
+
+      <div class="philosophy-bar-labels">
+        <div class="philosophy-label" style="--label-color: var(--primary)">
+          <strong>1–10%</strong>
+          <span>Model inference — proposes the change, nothing more.</span>
+        </div>
+        <div class="philosophy-label" style="--label-color: var(--accent)">
+          <strong>90–99%</strong>
+          <span>Deterministic pipeline — syntax, compilation, sandboxing, diff and memory checks that certify it's actually correct before disk commits.</span>
+        </div>
+      </div>
+
+      <div class="philosophy-bar">
+        <div class="philosophy-bar-fill"></div>
+        <div class="philosophy-bar-rest"></div>
+      </div>
+
+      <div class="philosophy-quote">
+        <span class="prompt-sym">❯</span><span class="comment-text"># a smarter model doesn't need fewer gates. it still gets all 6.</span>
       </div>
     </section>
 
