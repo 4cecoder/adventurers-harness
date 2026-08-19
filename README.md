@@ -47,7 +47,7 @@ Sources/
 | **FSM State Engine** | Enforced state transitions, no illegal moves |
 | **Leaf-First Ordering** | Implement dependencies before dependents |
 
-## Reference Projects (in `research/`)
+## Reference Architectures
 
 - **Codex** (OpenAI) — Rust CLI agent, gate-based certification
 - **Hermes Agent** (Nous Research) — Self-improving agent with learning loop
