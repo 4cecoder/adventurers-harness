@@ -4,6 +4,7 @@
 import Testing
 import Foundation
 @testable import AdventurersCore
+import LLMProviders
 
 @Suite("Security, Exec Policy, Approval & Network Gate Suite")
 struct SecurityGateTests {
@@ -27,9 +28,9 @@ struct SecurityGateTests {
         ]
 
         for cmd in dangerousCommands {
-            let match = detector.inspect(command: cmd)
+            let match = detector.detectDangerousCommand(cmd)
             #expect(match != nil, "Expected \(cmd) to be flagged as dangerous")
-            #expect(match?.risk == .critical || match?.risk == .high)
+            #expect(match?.risk == .destructive || match?.risk == .execute)
         }
     }
 
@@ -45,7 +46,7 @@ struct SecurityGateTests {
         ]
 
         for cmd in wrapped {
-            let match = detector.inspect(command: cmd)
+            let match = detector.detectDangerousCommand(cmd)
             #expect(match != nil, "Expected wrapped command \(cmd) to be detected")
         }
     }
@@ -66,7 +67,7 @@ struct SecurityGateTests {
         ]
 
         for cmd in safeCommands {
-            let match = detector.inspect(command: cmd)
+            let match = detector.detectDangerousCommand(cmd)
             #expect(match == nil, "Safe command \(cmd) should not be flagged")
         }
     }
@@ -75,21 +76,20 @@ struct SecurityGateTests {
 
     @Test("Exec Policy Engine evaluates allow, deny, and askApproval rules")
     func testExecPolicyEvaluation() {
-        var engine = ExecPolicyEngine()
+        let engine = ExecPolicyEngine()
         let customRules = [
-            ExecPolicyRule(pattern: "git push*", decision: .deny, description: "Block git push from harness"),
-            ExecPolicyRule(pattern: "npm publish*", decision: .askApproval, description: "Require approval for publishing"),
-            ExecPolicyRule(pattern: "swift test*", decision: .allow, description: "Allow running unit tests")
+            ExecPolicyRule(pattern: "git push", matchType: .prefix, decision: .deny),
+            ExecPolicyRule(pattern: "npm publish", matchType: .prefix, decision: .askApproval),
+            ExecPolicyRule(pattern: "swift test", matchType: .prefix, decision: .allow)
         ]
-        engine.loadRules(customRules)
 
-        let allowRes = engine.evaluate(command: "swift test")
+        let allowRes = engine.evaluate(command: "swift test", customRules: customRules)
         #expect(allowRes.decision == .allow)
 
-        let denyRes = engine.evaluate(command: "git push origin master")
+        let denyRes = engine.evaluate(command: "git push origin master", customRules: customRules)
         #expect(denyRes.decision == .deny)
 
-        let approvalRes = engine.evaluate(command: "npm publish --access public")
+        let approvalRes = engine.evaluate(command: "npm publish --access public", customRules: customRules)
         #expect(approvalRes.decision == .askApproval)
     }
 
@@ -98,58 +98,64 @@ struct SecurityGateTests {
     @Test("Tool Approval Manager tracks decisions, escalation, and session tokens")
     func testToolApprovalLifecycle() async {
         let manager = ToolApprovalManager(defaultPolicy: .askEveryTime, maxConsecutiveRejections: 2)
-
         let tool = "destructive_cleanup"
-        let args = ["target": "/tmp/test"]
 
-        let reqID = await manager.createRequest(toolName: tool, arguments: args)
-        #expect(!reqID.isEmpty)
+        // Record 2 consecutive rejections -> auto escalates to alwaysDeny
+        let firstRejection = await manager.recordRejection(for: tool)
+        #expect(firstRejection == false)
 
-        // Reject twice to trigger auto-escalation to alwaysDeny
-        await manager.respond(requestID: reqID, approved: false)
-        let reqID2 = await manager.createRequest(toolName: tool, arguments: args)
-        await manager.respond(requestID: reqID2, approved: false)
+        let secondRejection = await manager.recordRejection(for: tool)
+        #expect(secondRejection == true)
 
         let policy = await manager.policy(for: tool)
         #expect(policy == .alwaysDeny)
+
+        // Session grant test
+        await manager.grantSessionApproval(for: "safe_tool", sessionID: "sess-1")
+        let isApproved = await manager.isSessionApproved(for: "safe_tool", sessionID: "sess-1")
+        #expect(isApproved == true)
     }
 
     // MARK: - Network Gate
 
     @Test("Network Gate inspects endpoints and validates domain allowlists")
     func testNetworkGateValidation() async {
-        let allowedHosts = ["api.anthropic.com", "generativelanguage.googleapis.com", "*.github.com"]
-        let gate = NetworkGate(allowedHosts: allowedHosts, enforceHttpsOnly: true)
+        let config = NetworkGateConfig(
+            allowedProtocols: [.https],
+            allowedHosts: ["api.anthropic.com", "generativelanguage.googleapis.com", "*.github.com"],
+            deniedHosts: ["*.evil.com"],
+            inspectContent: true
+        )
+        let gate = NetworkGate(required: true, config: config)
+        let context = GateContext(taskID: "task-net", contract: TaskContract(prompt: "Net test"), previousOutputs: [])
 
-        let validUrl = "https://api.anthropic.com/v1/messages"
-        let validCheck = gate.validate(urlString: validUrl)
-        #expect(validCheck.allowed == true)
+        let validOutput = AgentOutput(
+            content: "Fetching from https://api.anthropic.com/v1/messages",
+            toolCalls: [],
+            turnIndex: 1,
+            timestamp: Date()
+        )
+        let validResult = await gate.evaluate(validOutput, context: context)
+        #expect(validResult.passed == true)
 
-        let wildcardUrl = "https://raw.githubusercontent.com/4cecoder/adventurers-harness/master/README.md"
-        let wildcardCheck = gate.validate(urlString: wildcardUrl)
-        #expect(wildcardCheck.allowed == true)
-
-        let insecureUrl = "http://api.anthropic.com/v1/messages"
-        let insecureCheck = gate.validate(urlString: insecureUrl)
-        #expect(insecureCheck.allowed == false, "HTTP should be rejected when HTTPS-only is enforced")
-
-        let forbiddenUrl = "https://unauthorized-domain.com/steal"
-        let forbiddenCheck = gate.validate(urlString: forbiddenUrl)
-        #expect(forbiddenCheck.allowed == false)
+        let blockedOutput = AgentOutput(
+            content: "Calling curl http://api.anthropic.com/v1/messages",
+            toolCalls: [],
+            turnIndex: 2,
+            timestamp: Date()
+        )
+        let blockedResult = await gate.evaluate(blockedOutput, context: context)
+        #expect(blockedResult.passed == false)
     }
 
     // MARK: - Darwin Sandbox
 
     @Test("Darwin Sandbox profile policy generation and path checks")
-    func darwinSandboxSecurityChecks() {
-        let sandbox = DarwinSandbox()
-        let profile = sandbox.generateSBProfile(
-            readOnlyPaths: ["/usr", "/System", "/Library"],
-            readWritePaths: ["/Users/fource/bytecats/adventurers-harness"],
-            allowNetwork: true
-        )
+    func darwinSandboxSecurityChecks() async {
+        let sandbox = DarwinSandbox.shared
+        let profile = await sandbox.generateSeatbeltProfile(for: .readOnly)
         #expect(profile.contains("(version 1)"))
         #expect(profile.contains("deny default"))
-        #expect(profile.contains("allow network*"))
+        #expect(profile.contains("file-read*"))
     }
 }

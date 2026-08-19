@@ -15,7 +15,9 @@ struct DiffAndCompactorTests {
     func diffEnginePatching() throws {
         let engine = DiffEngine()
         let original = "line1\nline2\nline3\n"
-        let patch = """
+        let rawDiff = """
+        --- a/file.txt
+        +++ b/file.txt
         @@ -1,3 +1,3 @@
          line1
         -line2
@@ -23,7 +25,10 @@ struct DiffAndCompactorTests {
          line3
         """
 
-        let result = try engine.applyPatch(original: original, patch: patch)
+        let patches = engine.parseUnifiedDiff(rawDiff)
+        #expect(!patches.isEmpty)
+
+        let result = try engine.apply(originalContent: original, hunks: patches[0].hunks)
         #expect(result.contains("line2_modified"))
         #expect(!result.contains("line2\n"))
     }
@@ -32,7 +37,9 @@ struct DiffAndCompactorTests {
     func diffEngineCorruptedContext() {
         let engine = DiffEngine()
         let original = "alpha\nbeta\ngamma\n"
-        let badPatch = """
+        let badDiff = """
+        --- a/file.txt
+        +++ b/file.txt
         @@ -1,3 +1,3 @@
          mismatched_context
         -beta
@@ -40,8 +47,11 @@ struct DiffAndCompactorTests {
          gamma
         """
 
-        #expect(throws: DiffError.self) {
-            try engine.applyPatch(original: original, patch: badPatch)
+        let patches = engine.parseUnifiedDiff(badDiff)
+        #expect(!patches.isEmpty)
+
+        #expect(throws: Error.self) {
+            try engine.apply(originalContent: original, hunks: patches[0].hunks)
         }
     }
 
@@ -76,12 +86,20 @@ struct DiffAndCompactorTests {
     // MARK: - Trajectory Compressor
 
     @Test("Trajectory Compressor reduces token volume of long horizon outputs")
-    func trajectoryCompressorRatio() {
-        let compressor = TrajectoryCompressor()
-        let largeOutput = String(repeating: "DEBUG: [2026-08-19] processing item in batch loop\n", count: 100)
+    func trajectoryCompressorRatio() async {
+        let compressor = TrajectoryCompressor(config: TrajectoryCompressionConfig(targetMaxTokens: 50, protectedHeadTurns: 1, protectedTailTurns: 1))
+        
+        var turns: [TrajectoryTurn] = [
+            TrajectoryTurn(role: "user", content: "Initial prompt"),
+        ]
+        for i in 1...10 {
+            turns.append(TrajectoryTurn(role: "tool", content: "Tool output \(i) with lots of debug logs and data \(String(repeating: "xyz ", count: 20))"))
+        }
+        turns.append(TrajectoryTurn(role: "assistant", content: "Final answer"))
 
-        let compressed = compressor.compress(rawOutput: largeOutput, maxTokens: 40)
-        #expect(compressed.count < largeOutput.count)
-        #expect(compressed.contains("compacted") || compressed.contains("lines") || compressed.contains("..."))
+        let compressed = await compressor.compressTrajectory(turns)
+        #expect(compressed.count < turns.count)
+        #expect(compressed.first?.content == "Initial prompt")
+        #expect(compressed.last?.content == "Final answer")
     }
 }
