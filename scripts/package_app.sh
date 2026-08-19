@@ -89,6 +89,10 @@ cat << PLIST > "${APP_DIR}/Contents/Info.plist"
     <array>
         <string>arm64</string>
     </array>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Adventurers Harness uses your microphone for one-click voice dictation into the prompt bar.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Adventurers Harness uses Apple Speech recognition for live low-latency speech-to-text dictation.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSRequiresAquaSystemAppearance</key>

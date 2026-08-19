@@ -375,30 +375,12 @@ final class AppState {
 struct AdventurersApp: App {
     @State private var appState = AppState()
 
-    init() {
-        #if os(macOS)
-        NSApplication.shared.setActivationPolicy(.regular)
-        DispatchQueue.main.async {
-            NSApplication.shared.activate(ignoringOtherApps: true)
-        }
-        #endif
-    }
-
     var body: some Scene {
-        WindowGroup(id: "workspace") {
+        WindowGroup {
             ContentView()
                 .environment(appState)
                 .frame(minWidth: 1000, minHeight: 650)
                 .background(Color.adBackground)
-                .onAppear {
-                    #if os(macOS)
-                    DispatchQueue.main.async {
-                        NSApplication.shared.setActivationPolicy(.regular)
-                        NSApplication.shared.activate(ignoringOtherApps: true)
-                        NSApp.windows.first(where: { $0.canBecomeKey })?.makeKeyAndOrderFront(nil)
-                    }
-                    #endif
-                }
         }
         .defaultSize(width: 1360, height: 860)
         .windowStyle(.hiddenTitleBar)
