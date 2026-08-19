@@ -1,401 +1,669 @@
 // TerminalOutputView.swift
-// Adventurers Harness — GUI output panel for agent bash executions.
-// Not a terminal emulator — a styled output viewer with command/result display.
+// Adventurers Harness — Full-featured Interactive Terminal & Command Runner Panel
 
 import SwiftUI
+import Foundation
 
 // MARK: - Models
 
-/// A single line of terminal output.
-struct TerminalLine: Identifiable, Sendable {
-    let id = UUID()
-    let timestamp: Date
-    let content: String
-    let type: LineType
+public struct TerminalLine: Identifiable, Sendable {
+    public let id: UUID
+    public let timestamp: Date
+    public let content: String
+    public let type: LineType
 
-    enum LineType: String, Sendable {
+    public enum LineType: String, Sendable {
         case command
         case output
         case error
         case info
     }
+
+    public init(id: UUID = UUID(), timestamp: Date = Date(), content: String, type: LineType) {
+        self.id = id
+        self.timestamp = timestamp
+        self.content = content
+        self.type = type
+    }
 }
 
-/// A terminal session capturing one bash execution.
 @Observable
 @MainActor
-final class TerminalSession {
-    let id = UUID()
-    var name: String
-    var lines: [TerminalLine] = []
-    var isRunning: Bool = false
-    var exitCode: Int?
+public final class TerminalSession: Identifiable {
+    public let id: UUID
+    public var name: String
+    public var lines: [TerminalLine] = []
+    public var isRunning: Bool = false
+    public var exitCode: Int?
+    public var activeProcess: Process?
 
-    init(name: String = "Session") {
+    public init(id: UUID = UUID(), name: String = "Interactive Shell") {
+        self.id = id
         self.name = name
     }
 
-    func appendCommand(_ command: String) {
+    public func appendCommand(_ command: String) {
         lines.append(TerminalLine(timestamp: Date(), content: command, type: .command))
     }
 
-    func appendOutput(_ output: String) {
+    public func appendOutput(_ output: String) {
         guard !output.isEmpty else { return }
         for line in output.components(separatedBy: "\n") {
             lines.append(TerminalLine(timestamp: Date(), content: line, type: .output))
         }
     }
 
-    func appendError(_ error: String) {
+    public func appendError(_ error: String) {
         guard !error.isEmpty else { return }
         for line in error.components(separatedBy: "\n") {
             lines.append(TerminalLine(timestamp: Date(), content: line, type: .error))
         }
     }
 
-    func finish(exitCode: Int) {
-        self.exitCode = exitCode
-        self.isRunning = false
-        let icon = exitCode == 0 ? "✓" : "✗"
-        lines.append(TerminalLine(timestamp: Date(), content: "\(icon) Process exited with code \(exitCode)", type: .info))
+    public func appendInfo(_ info: String) {
+        lines.append(TerminalLine(timestamp: Date(), content: info, type: .info))
     }
 
-    func clear() {
+    public func finish(exitCode: Int) {
+        self.exitCode = exitCode
+        self.isRunning = false
+        self.activeProcess = nil
+        let icon = exitCode == 0 ? "✓" : "✗"
+        lines.append(TerminalLine(timestamp: Date(), content: "\(icon) Process completed with exit code \(exitCode)", type: .info))
+    }
+
+    public func clear() {
         lines.removeAll()
         exitCode = nil
     }
-}
 
-/// Manages multiple terminal sessions.
-@Observable
-@MainActor
-final class TerminalManager {
-    var sessions: [TerminalSession] = []
-    var selectedSessionID: UUID?
-    var isExpanded: Bool = false
-
-    var activeSession: TerminalSession? {
-        guard let id = selectedSessionID else { return sessions.first }
-        return sessions.first { $0.id == id }
+    public func terminate() {
+        if let proc = activeProcess, proc.isRunning {
+            proc.terminate()
+            appendInfo("Process terminated by user.")
+            self.isRunning = false
+            self.activeProcess = nil
+        }
     }
 
-    func createSession(name: String = "Session") -> TerminalSession {
+    /// Run a bash/zsh command in the background and stream output
+    public func executeCommand(_ cmd: String, cwd: String? = nil) {
+        let trimmed = cmd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if trimmed == "clear" {
+            clear()
+            return
+        }
+
+        appendCommand(trimmed)
+        self.isRunning = true
+        self.exitCode = nil
+
+        let workDir = cwd ?? FileManager.default.currentDirectoryPath
+
+        Task.detached(priority: .userInitiated) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-c", trimmed]
+            process.currentDirectoryURL = URL(fileURLWithPath: workDir)
+
+            var env = ProcessInfo.processInfo.environment
+            env["TERM"] = "xterm-256color"
+            env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
+            process.environment = env
+
+            let outPipe = Pipe()
+            let errPipe = Pipe()
+            process.standardOutput = outPipe
+            process.standardError = errPipe
+
+            let outHandle = outPipe.fileHandleForReading
+            let errHandle = errPipe.fileHandleForReading
+
+            outHandle.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty, let str = String(data: data, encoding: .utf8) else { return }
+                Task { @MainActor [weak self] in
+                    self?.appendOutput(str)
+                }
+            }
+
+            errHandle.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty, let str = String(data: data, encoding: .utf8) else { return }
+                Task { @MainActor [weak self] in
+                    self?.appendError(str)
+                }
+            }
+
+            do {
+                try process.run()
+                await MainActor.run { [weak self] in
+                    self?.activeProcess = process
+                }
+                process.waitUntilExit()
+                outHandle.readabilityHandler = nil
+                errHandle.readabilityHandler = nil
+
+                let code = Int(process.terminationStatus)
+                await MainActor.run { [weak self] in
+                    self?.finish(exitCode: code)
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.appendError("Failed to launch command: \(error.localizedDescription)")
+                    self?.finish(exitCode: 1)
+                }
+            }
+        }
+    }
+}
+
+@Observable
+@MainActor
+public final class TerminalManager {
+    public var sessions: [TerminalSession] = []
+    public var selectedSessionID: UUID?
+    public var isExpanded: Bool = true
+
+    public init() {
+        let initial = createSession(name: "Interactive Shell")
+        initial.appendInfo("Adventurers Terminal Session initialized in \(FileManager.default.currentDirectoryPath)")
+        initial.appendInfo("Type commands below or click quick action chips to run tests, git, or build tools.")
+    }
+
+    public var activeSession: TerminalSession? {
+        guard let id = selectedSessionID else { return sessions.first }
+        return sessions.first { $0.id == id } ?? sessions.first
+    }
+
+    @discardableResult
+    public func createSession(name: String = "Shell") -> TerminalSession {
         let session = TerminalSession(name: name)
         sessions.append(session)
         selectedSessionID = session.id
         return session
     }
 
-    func closeSession(_ session: TerminalSession) {
+    public func logCommand(_ command: String) {
+        let session = activeSession ?? createSession(name: "Agent Task")
+        session.appendCommand(command)
+    }
+
+    public func logOutput(_ output: String) {
+        let session = activeSession ?? createSession(name: "Agent Task")
+        session.appendOutput(output)
+    }
+
+    public func logError(_ error: String) {
+        let session = activeSession ?? createSession(name: "Agent Task")
+        session.appendError(error)
+    }
+
+    public func closeSession(_ session: TerminalSession) {
+        session.terminate()
         sessions.removeAll { $0.id == session.id }
         if selectedSessionID == session.id {
             selectedSessionID = sessions.first?.id
         }
+        if sessions.isEmpty {
+            _ = createSession(name: "Shell 1")
+        }
     }
 }
 
-// MARK: - Main View
+// MARK: - Terminal Workbench View
 
-/// A collapsible GUI panel showing agent command execution output.
-/// Renders at the bottom of the thread view — not a real terminal.
-struct TerminalOutputView: View {
+public struct TerminalOutputView: View {
     @Bindable var manager: TerminalManager
 
+    @State private var inputCommand: String = ""
     @State private var searchText: String = ""
     @State private var showSearch: Bool = false
     @State private var wordWrap: Bool = true
+    @State private var renamingSession: TerminalSession?
+    @State private var renameSessionText: String = ""
+    @State private var commandHistory: [String] = []
+    @State private var historyIndex: Int = -1
 
-    var body: some View {
-        VStack(spacing: 0) {
-            if manager.isExpanded {
-                expandedView
-            } else {
-                collapsedBar
-            }
-        }
-        .animation(.spring(response: 0.3), value: manager.isExpanded)
+    public init(manager: TerminalManager) {
+        self.manager = manager
     }
 
-    // MARK: - Expanded View
-
-    private var expandedView: some View {
+    public var body: some View {
         VStack(spacing: 0) {
-            toolbar
+            // Top Toolbar
+            terminalToolbar
+
             Divider()
-            if showSearch { searchBar; Divider() }
-            sessionTabs
+                .overlay(Color.adOverlay)
+
+            // Search Bar (if visible)
+            if showSearch {
+                searchBarView
+                Divider().overlay(Color.adOverlay)
+            }
+
+            // Session Tabs Bar
+            sessionTabsView
+
             Divider()
+                .overlay(Color.adOverlay)
+
+            // Quick Execution Action Chips
+            quickActionsBar
+
+            Divider()
+                .overlay(Color.adOverlay)
+
+            // Output Monospaced Console Area
             outputScrollArea
+
             Divider()
-            inputBar
+                .overlay(Color.adOverlay)
+
+            // Bottom Interactive Command Prompt
+            interactiveInputBar
         }
-        .frame(minHeight: 200, idealHeight: 300)
+        .background(Color.adBackground)
+        .alert("Rename Terminal Session", isPresented: Binding(
+            get: { renamingSession != nil },
+            set: { if !$0 { renamingSession = nil } }
+        )) {
+            TextField("Session Name", text: $renameSessionText)
+            Button("Save") {
+                if let s = renamingSession, !renameSessionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    s.name = renameSessionText.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                renamingSession = nil
+            }
+            Button("Cancel", role: .cancel) {
+                renamingSession = nil
+            }
+        }
     }
 
     // MARK: - Toolbar
 
-    private var toolbar: some View {
+    private var terminalToolbar: some View {
         HStack(spacing: 12) {
-            Label("Output", systemImage: "terminal")
-                .font(.headline)
+            HStack(spacing: 6) {
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.adOrange)
+
+                Text("Interactive Terminal & Runner")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.adTextPrimary)
+            }
+
+            if let session = manager.activeSession {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(session.isRunning ? Color.adOrange : (session.exitCode == 0 ? Color.adSuccess : (session.exitCode != nil ? Color.adError : Color.adTextTertiary)))
+                        .frame(width: 6, height: 6)
+
+                    Text(session.isRunning ? "Running" : (session.exitCode != nil ? "Exit \(session.exitCode!)" : "Idle"))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.adTextSecondary)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.adElevated)
+                .clipShape(Capsule())
+            }
 
             Spacer()
 
-            Button { showSearch.toggle() } label: {
+            // Search toggle
+            Button {
+                withAnimation { showSearch.toggle() }
+            } label: {
                 Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(showSearch ? Color.adOrange : Color.adTextSecondary)
             }
             .buttonStyle(.plain)
-            .help("Search output")
+            .help("Search output (⌘F)")
 
-            Toggle(isOn: $wordWrap) {
-                Image(systemName: "text.wrap")
+            // Wrap toggle
+            Button {
+                wordWrap.toggle()
+            } label: {
+                Image(systemName: wordWrap ? "text.wrap" : "text.alignleft")
+                    .font(.system(size: 11))
+                    .foregroundStyle(wordWrap ? Color.adOrange : Color.adTextSecondary)
             }
-            .toggleStyle(.plain)
             .buttonStyle(.plain)
-            .help("Word wrap")
+            .help("Toggle Word Wrap")
 
             if let session = manager.activeSession {
+                if session.isRunning {
+                    Button {
+                        session.terminate()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 9))
+                            Text("Stop")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .foregroundStyle(Color.adError)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.adError.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Terminate Running Process")
+                }
+
                 Button {
-                    copyLastCommand(session)
+                    copyAllOutput(session)
                 } label: {
                     Image(systemName: "doc.on.doc")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.adTextSecondary)
                 }
                 .buttonStyle(.plain)
-                .help("Copy last command")
+                .help("Copy Entire Output")
 
                 Button {
                     session.clear()
                 } label: {
                     Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.adTextSecondary)
                 }
                 .buttonStyle(.plain)
-                .help("Clear session")
+                .help("Clear Session Log")
             }
-
-            Divider().frame(height: 16)
-
-            Button { manager.isExpanded = false } label: {
-                Image(systemName: "chevron.down")
-            }
-            .buttonStyle(.plain)
-            .help("Collapse panel")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
+        .background(Color.adNavy)
     }
 
     // MARK: - Search Bar
 
-    private var searchBar: some View {
+    private var searchBarView: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Search output...", text: $searchText)
+                .foregroundStyle(Color.adTextTertiary)
+                .font(.caption)
+
+            TextField("Search in terminal logs...", text: $searchText)
                 .textFieldStyle(.plain)
+                .font(.system(size: 11, design: .monospaced))
+
             if !searchText.isEmpty {
-                Button { searchText = "" } label: {
+                Button {
+                    searchText = ""
+                } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                        .foregroundStyle(Color.adTextTertiary)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(6)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.adElevated)
     }
 
     // MARK: - Session Tabs
 
-    private var sessionTabs: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(manager.sessions) { session in
-                    sessionTab(session)
+    private var sessionTabsView: some View {
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(manager.sessions) { session in
+                        sessionTabPill(session)
+                    }
+
+                    Button {
+                        _ = manager.createSession(name: "Shell \(manager.sessions.count + 1)")
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color.adTextSecondary)
+                            .padding(6)
+                            .background(Color.adElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                    .buttonStyle(.plain)
+                    .help("New Terminal Session")
                 }
-                Button { _ = manager.createSession() } label: {
-                    Image(systemName: "plus")
-                        .font(.caption)
-                        .padding(6)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+            }
+        }
+        .background(Color.adBackground)
+    }
+
+    private func sessionTabPill(_ session: TerminalSession) -> some View {
+        let isSelected = manager.selectedSessionID == session.id
+
+        return HStack(spacing: 6) {
+            if session.isRunning {
+                ProgressView()
+                    .controlSize(.mini)
+            } else {
+                Image(systemName: "terminal")
+                    .font(.system(size: 9))
+                    .foregroundStyle(isSelected ? Color.adOrange : Color.adTextTertiary)
+            }
+
+            Text(session.name)
+                .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? Color.adTextPrimary : Color.adTextSecondary)
+
+            if let code = session.exitCode {
+                Text("\(code)")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(code == 0 ? Color.adSuccess.opacity(0.2) : Color.adError.opacity(0.2))
+                    .foregroundStyle(code == 0 ? Color.adSuccess : Color.adError)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+
+            if manager.sessions.count > 1 {
+                Button {
+                    manager.closeSession(session)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(Color.adTextTertiary)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(isSelected ? Color.adElevated : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .onTapGesture {
+            manager.selectedSessionID = session.id
+        }
+        .contextMenu {
+            Button("Rename Session") {
+                renamingSession = session
+                renameSessionText = session.name
+            }
+            Button("Clear Output") {
+                session.clear()
+            }
+            Divider()
+            Button("Close Session", role: .destructive) {
+                manager.closeSession(session)
+            }
         }
     }
 
-    private func sessionTab(_ session: TerminalSession) -> some View {
-        Button { manager.selectedSessionID = session.id } label: {
+    // MARK: - Quick Action Chips
+
+    private var quickActionsBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                if session.isRunning {
-                    ProgressView()
-                        .controlSize(.mini)
-                }
-                Text(session.name)
-                    .font(.caption)
-                    .lineLimit(1)
-                if let code = session.exitCode {
-                    Text("\(code)")
-                        .font(.caption2)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(code == 0 ? .green.opacity(0.2) : .red.opacity(0.2), in: Capsule())
-                        .foregroundStyle(code == 0 ? .green : .red)
-                }
+                Text("Quick:")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.adTextTertiary)
+                    .padding(.leading, 4)
+
+                quickChip(label: "swift test", cmd: "swift test")
+                quickChip(label: "swift build", cmd: "swift build")
+                quickChip(label: "git status", cmd: "git status")
+                quickChip(label: "git diff", cmd: "git diff")
+                quickChip(label: "pwd & ls", cmd: "pwd && ls -la")
+                quickChip(label: "clear", cmd: "clear")
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                manager.selectedSessionID == session.id
-                    ? Color.accentColor.opacity(0.15)
-                    : Color.clear,
-                in: RoundedRectangle(cornerRadius: 6)
-            )
+            .padding(.vertical, 4)
         }
-        .buttonStyle(.plain)
-        .contextMenu {
-            Button("Rename") { /* TODO */ }
-            Button("Clear") { session.clear() }
-            Divider()
-            Button("Close") { manager.closeSession(session) }
-        }
+        .background(Color.adNavy.opacity(0.6))
     }
 
-    // MARK: - Output Scroll Area
+    private func quickChip(label: String, cmd: String) -> some View {
+        Button {
+            manager.activeSession?.executeCommand(cmd)
+        } label: {
+            Text(label)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.adTextSecondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Color.adElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Output Console Scroll Area
 
     private var outputScrollArea: some View {
         ScrollViewReader { proxy in
-            ScrollView([.horizontal, .vertical]) {
-                LazyVStack(alignment: .leading, spacing: 1) {
-                    ForEach(filteredLines) { line in
-                        terminalLineView(line)
-                            .id(line.id)
+            ScrollView(wordWrap ? .vertical : [.vertical, .horizontal]) {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    if let session = manager.activeSession {
+                        if session.lines.isEmpty {
+                            HStack {
+                                Text("Ready. Type a command below or select a quick action chip.")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(Color.adTextTertiary)
+                                Spacer()
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            ForEach(filteredLines) { line in
+                                terminalLineRow(line)
+                                    .id(line.id)
+                            }
+                        }
                     }
                 }
-                .padding(8)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .font(.system(.body, design: .monospaced))
+            .font(.system(size: 11, design: .monospaced))
+            .background(Color.adNavy)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onChange(of: manager.activeSession?.lines.count) { _, _ in
-                withAnimation { scrollToBottom(proxy) }
+                if let last = filteredLines.last {
+                    withAnimation {
+                        proxy.scrollTo(last.id, anchor: .bottom)
+                    }
+                }
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor))
     }
 
-    private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        if let lastLine = filteredLines.last {
-            proxy.scrollTo(lastLine.id, anchor: .bottom)
-        }
-    }
+    // MARK: - Line Row View
 
-    // MARK: - Line View
-
-    private func terminalLineView(_ line: TerminalLine) -> some View {
+    private func terminalLineRow(_ line: TerminalLine) -> some View {
         HStack(alignment: .top, spacing: 8) {
             // Timestamp
             Text(timeString(line.timestamp))
-                .foregroundStyle(.tertiary)
-                .font(.caption2)
-                .frame(width: 60, alignment: .leading)
+                .foregroundStyle(Color.adTextTertiary.opacity(0.6))
+                .font(.system(size: 9, design: .monospaced))
+                .frame(width: 52, alignment: .leading)
 
-            // Prompt indicator
-            switch line.type {
-            case .command:
-                Text("❯")
-                    .foregroundStyle(.green)
-                    .bold()
-            case .error:
-                Text("✗")
-                    .foregroundStyle(.red)
-            case .output, .info:
-                Text(" ")
-                    .foregroundStyle(.secondary)
+            // Prompt symbol
+            Group {
+                switch line.type {
+                case .command:
+                    Text("❯")
+                        .foregroundStyle(Color.adOrange)
+                        .fontWeight(.bold)
+                case .error:
+                    Text("✗")
+                        .foregroundStyle(Color.adError)
+                case .info:
+                    Text("ℹ")
+                        .foregroundStyle(Color.adTextTertiary)
+                case .output:
+                    Text(" ")
+                        .foregroundStyle(.clear)
+                }
             }
+            .frame(width: 12, alignment: .center)
 
             // Content
             Text(line.content)
                 .textSelection(.enabled)
                 .foregroundStyle(lineColor(line.type))
-                .lineSpacing(2)
+                .lineLimit(wordWrap ? nil : 1)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 1)
-        .background(
-            line.type == .command
-                ? Color.green.opacity(0.05)
-                : Color.clear
-        )
+        .padding(.horizontal, 4)
+        .background(line.type == .command ? Color.adElevated.opacity(0.4) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
     }
 
-    private func lineColor(_ type: TerminalLine.LineType) -> Color {
-        switch type {
-        case .command: return .green
-        case .error:   return .red
-        case .output:  return .primary
-        case .info:    return .secondary
-        }
-    }
+    // MARK: - Interactive Input Bar
 
-    private func timeString(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: date)
-    }
-
-    // MARK: - Input Bar
-
-    private var inputBar: some View {
+    private var interactiveInputBar: some View {
         HStack(spacing: 8) {
-            Text("$")
-                .foregroundStyle(.green)
-                .font(.system(.body, design: .monospaced).bold())
+            Text("❯")
+                .foregroundStyle(Color.adOrange)
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
 
-            TextField("Enter command...", text: .constant(""))
+            TextField("Type a bash command (e.g. swift test, git status)...", text: $inputCommand)
                 .textFieldStyle(.plain)
-                .font(.system(.body, design: .monospaced))
-                .onSubmit { /* TODO: execute command */ }
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Color.adTextPrimary)
+                .onSubmit {
+                    submitCommand()
+                }
+
+            if !inputCommand.isEmpty {
+                Button {
+                    submitCommand()
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.adOrange)
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .padding(8)
-        .background(.ultraThinMaterial)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Color.adElevated)
     }
 
-    // MARK: - Collapsed Bar
-
-    private var collapsedBar: some View {
-        Button { manager.isExpanded = true } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "terminal")
-                    .foregroundStyle(.secondary)
-                if let session = manager.activeSession {
-                    Text("\(session.lines.count) lines")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let code = session.exitCode {
-                        Text("exit \(code)")
-                            .font(.caption2)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(code == 0 ? .green.opacity(0.2) : .red.opacity(0.2), in: Capsule())
-                            .foregroundStyle(code == 0 ? .green : .red)
-                    }
-                } else {
-                    Text("No sessions")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.up")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.ultraThinMaterial)
-        }
-        .buttonStyle(.plain)
+    private func submitCommand() {
+        let cmd = inputCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cmd.isEmpty else { return }
+        commandHistory.append(cmd)
+        historyIndex = commandHistory.count
+        inputCommand = ""
+        manager.activeSession?.executeCommand(cmd)
     }
 
     // MARK: - Helpers
@@ -406,11 +674,27 @@ struct TerminalOutputView: View {
         return session.lines.filter { $0.content.localizedCaseInsensitiveContains(searchText) }
     }
 
-    private func copyLastCommand(_ session: TerminalSession) {
-        guard let lastCommand = session.lines.last(where: { $0.type == .command }) else { return }
-        #if canImport(AppKit)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(lastCommand.content, forType: .string)
+    private func lineColor(_ type: TerminalLine.LineType) -> Color {
+        switch type {
+        case .command: return Color.adTextPrimary
+        case .error:   return Color.adError
+        case .info:    return Color.adOrange
+        case .output:  return Color.adTextSecondary
+        }
+    }
+
+    private func timeString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: date)
+    }
+
+    private func copyAllOutput(_ session: TerminalSession) {
+        let text = session.lines.map { "[\(timeString($0.timestamp))] \($0.content)" }.joined(separator: "\n")
+        #if os(macOS)
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
         #endif
     }
 }

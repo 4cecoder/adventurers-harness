@@ -2,151 +2,372 @@
 //  AdventurersApp.swift
 //  Adventurers Harness
 //
-//  macOS coding agent harness — three-panel workspace for parallel agent threads.
-//  Inspired by OpenAI Codex desktop, rebuilt with Swift concurrency and SwiftUI.
+//  macOS native coding agent harness — Next-gen competitor to Codex app for macOS.
+//  Three-panel workspace for parallel agent threads with deterministic gate certification.
+//  Built with Swift 6 and modern macOS SwiftUI.
 //
 
 import SwiftUI
+import AdventurersCore
+
+// MARK: - Workbench Mode
+
+/// Center stage view modes for the agent workbench.
+enum WorkbenchTab: String, CaseIterable, Identifiable, Sendable {
+    case thread = "Thread"
+    case diff = "Diffs"
+    case terminal = "Terminal"
+    case skills = "Skills"
+
+    var id: String { rawValue }
+
+    var symbolName: String {
+        switch self {
+        case .thread:   "bubble.left.and.bubble.right.fill"
+        case .diff:     "arrow.triangle.branch"
+        case .terminal: "terminal.fill"
+        case .skills:   "puzzlepiece.extension.fill"
+        }
+    }
+
+    var shortcutNumber: Int {
+        switch self {
+        case .thread:   1
+        case .diff:     2
+        case .terminal: 3
+        case .skills:   4
+        }
+    }
+}
 
 // MARK: - App State
 
 /// Top-level application state managed as an `@Observable` singleton.
-/// Drives thread list, selection, inspector visibility, and sidebar presentation.
+/// Coordinates thread management, workbench tabs, tool executions, and inspector states.
 @Observable
 @MainActor
 final class AppState {
 
     // MARK: Thread Management
 
-    /// All open agent threads, keyed by stable ID.
-    var threads: [ThreadID: AgentThread] = [:]
+    /// All open agent threads.
+    var threads: [ThreadItem] = []
 
-    /// Currently selected thread in the sidebar.
-    var selectedThreadID: ThreadID?
+    /// Currently selected thread ID.
+    var selectedThreadID: UUID?
 
-    /// Monotonically increasing ID generator — no two threads share a value.
-    private var nextThreadID: UInt64 = 1
+    /// Search query for filtering threads in the sidebar.
+    var threadSearchQuery: String = ""
+
+    // MARK: Workbench Navigation
+
+    /// Current active tab on the center workbench.
+    var activeTab: WorkbenchTab = .thread
+
+    /// Active model selected for execution.
+    var selectedModel: String = "Claude 3.7 Sonnet"
+
+    /// Active workspace / repository context.
+    var currentWorkspace: String = "adventurers-harness"
 
     // MARK: Panel Visibility
 
-    /// Whether the sidebar (thread list) is visible.
+    /// Whether the sidebar (threads) is visible.
     var showsSidebar: Bool = true
 
-    /// Whether the inspector panel (tools / gates) is visible.
+    /// Whether the right inspector panel is visible.
     var showsInspector: Bool = false
 
-    // MARK: Computed
+    /// Whether the command palette (⌘K) is open.
+    var showsCommandPalette: Bool = false
 
-    /// The thread currently being viewed, derived from `selectedThreadID`.
-    var activeThread: AgentThread? {
-        guard let id = selectedThreadID else { return nil }
-        return threads[id]
-    }
+    // MARK: ViewModels for Active Thread
 
-    // MARK: Actions
+    /// Thread view models keyed by ThreadItem ID.
+    var threadViewModels: [UUID: ThreadViewModel] = [:]
 
-    /// Create a new agent thread and select it immediately.
-    func createThread() {
-        let id = ThreadID(rawValue: nextThreadID)
-        nextThreadID += 1
+    /// Diff view states keyed by ThreadItem ID.
+    var diffStates: [UUID: DiffViewerState] = [:]
 
-        let thread = AgentThread(
-            id: id,
-            title: "Thread \(id.rawValue)",
-            createdAt: .now
-        )
+    /// Gate pipeline states keyed by ThreadItem ID.
+    var gateStates: [UUID: GatePipelineState] = [:]
 
-        threads[id] = thread
-        selectedThreadID = id
-    }
+    /// Terminal manager for live bash / runner output.
+    var terminalManager = TerminalManager()
 
-    /// Close a thread and update selection to the nearest neighbour.
-    func closeThread(_ id: ThreadID) {
-        threads.removeValue(forKey: id)
+    /// Central settings model persisted across application life.
+    var settingsModel = SettingsModel()
 
-        if selectedThreadID == id {
-            let sorted = threads.keys.sorted(by: { $0.rawValue < $1.rawValue })
-            selectedThreadID = sorted.last
+    // MARK: Initialization
+
+    init() {
+        loadThreadsFromStore()
+        Task { @MainActor in
+            await settingsModel.fetchLiveModelsForActiveProvider()
         }
     }
 
-    /// Toggle the inspector panel on the trailing edge.
+    private func loadThreadsFromStore() {
+        let loaded = ThreadStore.shared.loadAllThreads()
+        if !loaded.isEmpty {
+            self.threads = loaded
+            self.selectedThreadID = loaded.first?.id
+        } else {
+            createThread(name: "Initial Task: Exploration & Setup")
+        }
+    }
+
+    // MARK: Computed Properties
+
+    var selectedThread: ThreadItem? {
+        guard let id = selectedThreadID else { return threads.first }
+        return threads.first { $0.id == id }
+    }
+
+    var currentThreadViewModel: ThreadViewModel {
+        guard let item = selectedThread else {
+            return ThreadViewModel()
+        }
+        if let existing = threadViewModels[item.id] {
+            return existing
+        }
+        let vm = ThreadViewModel(threadID: item.id)
+        vm.selectedModel = settingsModel.selectedModel
+        vm.onMessagesChanged = { [weak self] (messages: [ThreadMessage]) in
+            guard let self else { return }
+            if let current = self.threads.first(where: { $0.id == item.id }) {
+                var updated = current
+                if let last = messages.last {
+                    updated.summary = String(last.content.prefix(120))
+                    updated.lastActivity = Date()
+                    if let idx = self.threads.firstIndex(where: { $0.id == item.id }) {
+                        self.threads[idx] = updated
+                    }
+                }
+                ThreadStore.shared.saveThread(
+                    item: updated,
+                    messages: messages,
+                    selectedModel: self.settingsModel.selectedModel
+                )
+            }
+        }
+        threadViewModels[item.id] = vm
+        return vm
+    }
+
+    var currentDiffState: DiffViewerState {
+        guard let id = selectedThread?.id else {
+            return createSampleDiffState()
+        }
+        if let existing = diffStates[id] {
+            return existing
+        }
+        let state = createSampleDiffState()
+        diffStates[id] = state
+        return state
+    }
+
+    var currentGateState: GatePipelineState {
+        guard let id = selectedThread?.id else {
+            return GatePipelineState()
+        }
+        if let existing = gateStates[id] {
+            return existing
+        }
+        let state = GatePipelineState()
+        gateStates[id] = state
+        return state
+    }
+
+    // MARK: Actions & CRUD Operations
+
+    func createThread(name: String? = nil) {
+        let threadName = name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? name!
+            : "Task: Adventure #\(threads.count + 1)"
+
+        let item = ThreadItem(
+            id: UUID(),
+            name: threadName,
+            status: .running,
+            summary: "Awaiting task assignment...",
+            lastActivity: Date(),
+            createdAt: Date(),
+            agentName: settingsModel.selectedModel.components(separatedBy: "/").last ?? "Agent",
+            isArchived: false,
+            isPinned: false
+        )
+
+        threads.insert(item, at: 0)
+        selectedThreadID = item.id
+
+        // Initialize thread models
+        let tvm = ThreadViewModel(threadID: item.id)
+        tvm.selectedModel = settingsModel.selectedModel
+        tvm.onMessagesChanged = { [weak self] (messages: [ThreadMessage]) in
+            guard let self else { return }
+            if let current = self.threads.first(where: { $0.id == item.id }) {
+                var updated = current
+                if let last = messages.last {
+                    updated.summary = String(last.content.prefix(120))
+                    updated.lastActivity = Date()
+                    if let idx = self.threads.firstIndex(where: { $0.id == item.id }) {
+                        self.threads[idx] = updated
+                    }
+                }
+                ThreadStore.shared.saveThread(
+                    item: updated,
+                    messages: messages,
+                    selectedModel: self.settingsModel.selectedModel
+                )
+            }
+        }
+        threadViewModels[item.id] = tvm
+
+        let diff = createSampleDiffState()
+        diffStates[item.id] = diff
+
+        let gates = GatePipelineState()
+        gateStates[item.id] = gates
+
+        // Persist initial record
+        ThreadStore.shared.saveThread(
+            item: item,
+            messages: tvm.messages,
+            selectedModel: settingsModel.selectedModel
+        )
+
+        // Add initial log to terminal session
+        let session = terminalManager.createSession(name: threadName)
+        session.appendCommand("harness run --thread \(item.id.uuidString.prefix(8)) --model \(settingsModel.selectedModel)")
+        session.appendOutput("Initialized agent environment for workspace: \(currentWorkspace)")
+    }
+
+    func deleteThread(_ thread: ThreadItem) {
+        threads.removeAll { $0.id == thread.id }
+        threadViewModels.removeValue(forKey: thread.id)
+        diffStates.removeValue(forKey: thread.id)
+        gateStates.removeValue(forKey: thread.id)
+        ThreadStore.shared.deleteThread(id: thread.id)
+
+        if selectedThreadID == thread.id {
+            selectedThreadID = threads.first?.id
+        }
+    }
+
+    func setArchived(_ thread: ThreadItem, isArchived: Bool) {
+        guard let index = threads.firstIndex(where: { $0.id == thread.id }) else { return }
+        threads[index].isArchived = isArchived
+        threads[index].status = isArchived ? .completed : .running
+        threads[index].lastActivity = Date()
+        ThreadStore.shared.setArchived(id: thread.id, isArchived: isArchived)
+    }
+
+    func setPinned(_ thread: ThreadItem, isPinned: Bool) {
+        guard let index = threads.firstIndex(where: { $0.id == thread.id }) else { return }
+        threads[index].isPinned = isPinned
+        ThreadStore.shared.setPinned(id: thread.id, isPinned: isPinned)
+        // Re-sort: pinned first
+        threads.sort { (a: ThreadItem, b: ThreadItem) -> Bool in
+            if a.isPinned != b.isPinned {
+                return a.isPinned && !b.isPinned
+            }
+            return a.lastActivity > b.lastActivity
+        }
+    }
+
+    func renameThread(_ thread: ThreadItem, to newName: String) {
+        guard let index = threads.firstIndex(where: { $0.id == thread.id }) else { return }
+        threads[index].name = newName
+        ThreadStore.shared.renameThread(id: thread.id, newName: newName)
+    }
+
+    func duplicateThread(_ thread: ThreadItem) {
+        if let dup = ThreadStore.shared.duplicateThread(id: thread.id) {
+            threads.insert(dup, at: 0)
+            selectedThreadID = dup.id
+        }
+    }
+
+    func exportThreadMarkdown(_ thread: ThreadItem) -> String {
+        let messages = ThreadStore.shared.loadMessages(for: thread.id)
+        let md = ThreadStore.shared.exportMarkdown(for: thread, messages: messages)
+        #if os(macOS)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(md, forType: .string)
+        #endif
+        return md
+    }
+
+    func clearArchivedThreads() {
+        threads.removeAll { $0.isArchived }
+        ThreadStore.shared.clearArchivedThreads()
+        if let sel = selectedThreadID, !threads.contains(where: { $0.id == sel }) {
+            selectedThreadID = threads.first?.id
+        }
+    }
+
     func toggleInspector() {
-        showsInspector.toggle()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showsInspector.toggle()
+        }
     }
-}
 
-// MARK: - Thread Model
-
-/// A stable, hashable identifier for an agent thread.
-struct ThreadID: Hashable, Comparable, Sendable {
-    let rawValue: UInt64
-
-    static func < (lhs: ThreadID, rhs: ThreadID) -> Bool {
-        lhs.rawValue < rhs.rawValue
+    func toggleSidebar() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showsSidebar.toggle()
+        }
     }
-}
 
-/// A single agent conversation thread.
-struct AgentThread: Identifiable, Sendable {
-    let id: ThreadID
-    var title: String
-    let createdAt: Date
-    var messages: [ChatMessage] = []
-}
-
-/// A single chat message exchanged with the agent.
-struct ChatMessage: Identifiable, Sendable {
-    let id: UUID
-    let role: MessageRole
-    let content: String
-    let timestamp: Date
-
-    init(role: MessageRole, content: String) {
-        self.id = UUID()
-        self.role = role
-        self.content = content
-        self.timestamp = .now
+    private func createSampleDiffState() -> DiffViewerState {
+        return SeedData.createRichDiffState()
     }
-}
-
-/// The role of a chat participant.
-enum MessageRole: Sendable {
-    case user
-    case assistant
-    case system
 }
 
 // MARK: - App Entry Point
 
 @main
 struct AdventurersApp: App {
-
     @State private var appState = AppState()
 
-    // MARK: Scene Composition
+    init() {
+        #if os(macOS)
+        NSApplication.shared.setActivationPolicy(.regular)
+        DispatchQueue.main.async {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
+        #endif
+    }
 
     var body: some Scene {
-        // Primary workspace window — opens on launch.
         WindowGroup(id: "workspace") {
             ContentView()
                 .environment(appState)
-                .frame(minWidth: 960, minHeight: 600)
+                .frame(minWidth: 1000, minHeight: 650)
+                .background(Color.adBackground)
+                .onAppear {
+                    #if os(macOS)
+                    DispatchQueue.main.async {
+                        NSApplication.shared.setActivationPolicy(.regular)
+                        NSApplication.shared.activate(ignoringOtherApps: true)
+                        NSApp.windows.first(where: { $0.canBecomeKey })?.makeKeyAndOrderFront(nil)
+                    }
+                    #endif
+                }
         }
-        .defaultSize(width: 1_440, height: 900)
+        .defaultSize(width: 1360, height: 860)
         .windowStyle(.hiddenTitleBar)
-        .windowToolbarStyle(.unified(showsTitle: true))
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             AgentCommands(appState: appState)
         }
 
-        // Settings scene — accessible via Cmd+, or the app menu.
         Settings {
-            SettingsView()
+            SettingsView(model: appState.settingsModel)
                 .environment(appState)
         }
 
-        // About window with custom branding.
         Window("About Adventurers Harness", id: "about-window") {
             AboutView()
         }
@@ -156,686 +377,923 @@ struct AdventurersApp: App {
     }
 }
 
-// MARK: - Primary Content View
+// MARK: - Primary Content View (Clean macOS Three-Panel Scaffolding)
 
-/// Root three-panel layout using `NavigationSplitView`.
 struct ContentView: View {
     @Environment(AppState.self) private var appState
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView()
-        } content: {
-            ThreadContentView()
+                .navigationSplitViewColumnWidth(min: 260, ideal: 290, max: 380)
         } detail: {
-            DetailPlaceholderView()
+            WorkbenchContentView()
         }
-        .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360, for: .sidebar)
-        .navigationSplitViewColumnWidth(min: 300, ideal: 480, for: .content)
-        .inspectorColumnWidth(min: 280, ideal: 320, max: 400)
-        .inspector(isPresented: Binding(
-            get: { appState.showsInspector },
-            set: { _ in appState.toggleInspector() }
-        )) {
-            InspectorView()
+        .navigationSplitViewStyle(.balanced)
+        .navigationSplitViewColumnWidth(min: 260, ideal: 290, max: 380)
+        .inspector(isPresented: Bindable(appState).showsInspector) {
+            InspectorPanel()
+                .inspectorColumnWidth(min: 260, ideal: 290, max: 360)
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
-                Button {
-                    withAnimation(.spring(response: 0.3)) {
-                        appState.showsSidebar.toggle()
-                    }
-                } label: {
-                    Label("Toggle Sidebar", systemImage: "sidebar.left")
-                }
-                .help("Toggle sidebar")
+                // Workspace / Branch Picker Pill
+                WorkspacePickerPill()
+            }
+
+            ToolbarItem(placement: .principal) {
+                // Calm, minimal mode switcher
+                WorkbenchTabBar()
             }
 
             ToolbarItemGroup(placement: .primaryAction) {
+                // Model Selector Pill
+                ModelSelectorMenu()
+
+                // Settings Button
+                SettingsToolbarButton()
+
+                // Spotlight / Command Palette Button
+                Button {
+                    appState.showsCommandPalette = true
+                } label: {
+                    Label("Spotlight Search", systemImage: "magnifyingglass")
+                }
+                .help("Spotlight Command Palette (⌘K)")
+
+                // New Thread Button
                 Button {
                     appState.createThread()
                 } label: {
-                    Label("New Thread", systemImage: "plus.message")
+                    Label("New Thread", systemImage: "square.and.pencil")
                 }
-                .help("New agent thread")
+                .help("New Thread (⌘N)")
 
+                // Inspector Toggle
                 Button {
                     appState.toggleInspector()
                 } label: {
                     Label("Toggle Inspector", systemImage: "sidebar.right")
                 }
-                .help("Toggle inspector panel")
+                .help("Toggle Inspector (⌘I)")
             }
+        }
+        .sheet(isPresented: Bindable(appState).showsCommandPalette) {
+            CommandPaletteModal()
         }
     }
 }
 
-// MARK: - Sidebar (Thread List)
+struct SettingsToolbarButton: View {
+    @Environment(\.openSettings) private var openSettings
 
-/// Left panel listing all open agent threads.
-struct SidebarView: View {
+    var body: some View {
+        Button {
+            openSettings()
+        } label: {
+            Label("Settings", systemImage: "gearshape")
+        }
+        .help("Settings & LLM Providers (⌘,)")
+    }
+}
+
+// MARK: - Workspace Picker Pill
+
+struct WorkspacePickerPill: View {
     @Environment(AppState.self) private var appState
 
-    private var sortedThreads: [AgentThread] {
-        appState.threads.values.sorted { $0.createdAt > $1.createdAt }
+    var body: some View {
+        Menu {
+            Button("adventurers-harness (Current)") {}
+            Button("Switch Branch: main") {}
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "shippingbox.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.adOrange)
+
+                Text("adventurers-harness")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.adTextPrimary)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.adElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .menuStyle(.borderlessButton)
+    }
+}
+
+// MARK: - Model Selector Menu
+
+struct ModelSelectorMenu: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        PaginatedSearchableCombobox(
+            selection: Bindable(appState.settingsModel).selectedModel,
+            title: "\(appState.settingsModel.activeProvider.rawValue) Models",
+            items: appState.settingsModel.modelsForActiveProvider(),
+            pageSize: 8,
+            onRefresh: {
+                Task {
+                    await appState.settingsModel.fetchLiveModelsForActiveProvider()
+                }
+            }
+        )
+    }
+}
+
+// MARK: - Workbench Tab Bar (Center Header)
+
+struct WorkbenchTabBar: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(WorkbenchTab.allCases) { tab in
+                let isSelected = appState.activeTab == tab
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        appState.activeTab = tab
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: tab.symbolName)
+                            .font(.system(size: 10))
+
+                        Text(tab.rawValue)
+                            .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(isSelected ? Color.adOverlay : Color.clear)
+                    .foregroundStyle(isSelected ? Color.adTextPrimary : Color.adTextSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(Color.adElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+// MARK: - Sidebar View
+
+enum ThreadFilterTab: String, CaseIterable, Identifiable {
+    case active = "Active"
+    case pinned = "Pinned"
+    case archived = "Archived"
+
+    var id: String { rawValue }
+}
+
+struct SidebarView: View {
+    @Environment(AppState.self) private var appState
+    @State private var selectedFilter: ThreadFilterTab = .active
+    @State private var renamingThread: ThreadItem?
+    @State private var renameText: String = ""
+    @State private var toastMessage: String?
+
+    var filteredThreads: [ThreadItem] {
+        let baseList: [ThreadItem]
+        switch selectedFilter {
+        case .active:
+            baseList = appState.threads.filter { !$0.isArchived }
+        case .pinned:
+            baseList = appState.threads.filter { $0.isPinned && !$0.isArchived }
+        case .archived:
+            baseList = appState.threads.filter { $0.isArchived }
+        }
+
+        if appState.threadSearchQuery.isEmpty {
+            return baseList
+        }
+        return baseList.filter {
+            $0.name.localizedCaseInsensitiveContains(appState.threadSearchQuery) ||
+            $0.summary.localizedCaseInsensitiveContains(appState.threadSearchQuery)
+        }
     }
 
     var body: some View {
-        List(
-            selection: Binding(
-                get: { appState.selectedThreadID },
-                set: { appState.selectedThreadID = $0 }
-            )
-        ) {
-            Section {
-                ForEach(sortedThreads) { thread in
-                    ThreadRow(thread: thread)
-                        .tag(thread.id)
+        VStack(spacing: 0) {
+            // Header & Filter Segment
+            VStack(spacing: 6) {
+                // Search field
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption2)
+                        .foregroundStyle(Color.adTextTertiary)
+
+                    TextField("Search \(appState.threads.count) threads...", text: Bindable(appState).threadSearchQuery)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 11))
+
+                    if !appState.threadSearchQuery.isEmpty {
+                        Button {
+                            appState.threadSearchQuery = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption2)
+                                .foregroundStyle(Color.adTextTertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-            } header: {
-                Label("Threads", systemImage: "bubble.left.and.bubble.right")
-                    .font(.headline)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.adElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                // Segmented Filter Tabs (Active / Pinned / Archived)
+                HStack(spacing: 2) {
+                    ForEach(ThreadFilterTab.allCases) { tab in
+                        let isSelected = selectedFilter == tab
+                        let count: Int = {
+                            switch tab {
+                            case .active: return appState.threads.filter { !$0.isArchived }.count
+                            case .pinned: return appState.threads.filter { $0.isPinned && !$0.isArchived }.count
+                            case .archived: return appState.threads.filter { $0.isArchived }.count
+                            }
+                        }()
+
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                selectedFilter = tab
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(tab.rawValue)
+                                    .font(.system(size: 10, weight: isSelected ? .bold : .medium))
+                                Text("\(count)")
+                                    .font(.system(size: 9, weight: .regular))
+                                    .opacity(0.7)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 3)
+                            .background(isSelected ? Color.adElevated : Color.clear)
+                            .foregroundStyle(isSelected ? Color.adTextPrimary : Color.adTextTertiary)
+                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(2)
+                .background(Color.adBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
-        }
-        .listStyle(.sidebar)
-        .navigationTitle("Adventurers")
-        .toolbar {
-            ToolbarItem {
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+
+            // Toast / Status banner
+            if let toast = toastMessage {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.adSuccess)
+                        .font(.system(size: 10))
+                    Text(toast)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.adTextPrimary)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Color.adElevated)
+                .transition(.opacity)
+            }
+
+            // Thread list
+            if filteredThreads.isEmpty {
+                VStack(spacing: 8) {
+                    Spacer()
+                    Image(systemName: selectedFilter == .archived ? "archivebox" : (selectedFilter == .pinned ? "pin.slash" : "bubble.left.and.bubble.right"))
+                        .font(.system(size: 24))
+                        .foregroundStyle(Color.adTextTertiary)
+                    Text(selectedFilter == .archived ? "No archived threads" : (selectedFilter == .pinned ? "No pinned threads" : "No active threads"))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.adTextSecondary)
+
+                    if selectedFilter == .active {
+                        Button("Create Thread") {
+                            appState.createThread()
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.adOrange)
+                        .buttonStyle(.plain)
+                        .padding(.top, 4)
+                    }
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                List(selection: Bindable(appState).selectedThreadID) {
+                    Section {
+                        ForEach(filteredThreads) { thread in
+                            ThreadSidebarRow(thread: thread)
+                                .tag(thread.id)
+                                .contextMenu {
+                                    Button {
+                                        renamingThread = thread
+                                        renameText = thread.name
+                                    } label: {
+                                        Label("Rename Thread", systemImage: "pencil")
+                                    }
+
+                                    Button {
+                                        appState.setPinned(thread, isPinned: !thread.isPinned)
+                                    } label: {
+                                        Label(thread.isPinned ? "Unpin from Top" : "Pin to Top", systemImage: thread.isPinned ? "pin.slash" : "pin.fill")
+                                    }
+
+                                    Button {
+                                        appState.setArchived(thread, isArchived: !thread.isArchived)
+                                    } label: {
+                                        Label(thread.isArchived ? "Restore Thread" : "Archive Thread", systemImage: thread.isArchived ? "tray.and.arrow.up" : "archivebox")
+                                    }
+
+                                    Button {
+                                        appState.duplicateThread(thread)
+                                    } label: {
+                                        Label("Duplicate Thread", systemImage: "doc.on.doc")
+                                    }
+
+                                    Divider()
+
+                                    Button {
+                                        _ = appState.exportThreadMarkdown(thread)
+                                        withAnimation {
+                                            toastMessage = "Copied Markdown to Clipboard"
+                                        }
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                                            withAnimation { toastMessage = nil }
+                                        }
+                                    } label: {
+                                        Label("Export Transcript (Markdown)", systemImage: "square.and.arrow.up")
+                                    }
+
+                                    Divider()
+
+                                    Button(role: .destructive) {
+                                        appState.deleteThread(thread)
+                                    } label: {
+                                        Label("Delete Permanently", systemImage: "trash")
+                                    }
+                                }
+                        }
+                    } header: {
+                        HStack {
+                            Text(selectedFilter.rawValue)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Color.adTextTertiary)
+                                .textCase(.uppercase)
+
+                            Spacer()
+
+                            if selectedFilter == .archived && !filteredThreads.isEmpty {
+                                Button("Clear All") {
+                                    appState.clearArchivedThreads()
+                                }
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Color.adError)
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.sidebar)
+            }
+
+            // Minimal Footer
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.adSuccess)
+                        .frame(width: 6, height: 6)
+                    Text("\(appState.threads.filter { !$0.isArchived }.count) Active Threads")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.adTextTertiary)
+                }
+
+                Spacer()
+
+                SettingsFooterButton()
+
                 Button {
                     appState.createThread()
                 } label: {
                     Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color.adOrange)
                 }
-                .help("New thread")
+                .buttonStyle(.plain)
+                .help("New Thread (⌘N)")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.adNavy)
+        }
+        .background(Color.adBackground)
+        .alert("Rename Thread", isPresented: Binding(
+            get: { renamingThread != nil },
+            set: { if !$0 { renamingThread = nil } }
+        )) {
+            TextField("Thread Name", text: $renameText)
+            Button("Save") {
+                if let t = renamingThread, !renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    appState.renameThread(t, to: renameText.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+                renamingThread = nil
+            }
+            Button("Cancel", role: .cancel) {
+                renamingThread = nil
             }
         }
     }
 }
 
-// MARK: - Thread Row
-
-/// A single row in the sidebar thread list.
-struct ThreadRow: View {
-    let thread: AgentThread
+struct SettingsFooterButton: View {
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(thread.title)
-                .font(.body)
-                .lineLimit(1)
-
-            Text(thread.createdAt, style: .relative)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        Button {
+            openSettings()
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.adTextTertiary)
         }
-        .padding(.vertical, 2)
+        .buttonStyle(.plain)
+        .help("Settings & LLM Providers (⌘,)")
     }
 }
 
-// MARK: - Thread Content View
+// MARK: - Thread Sidebar Row
 
-/// Center panel — displays the chat thread for the selected agent.
-struct ThreadContentView: View {
-    @Environment(AppState.self) private var appState
-
-    var body: some View {
-        if let thread = appState.activeThread {
-            ChatView(thread: thread)
-        } else {
-            EmptyStateView()
-        }
-    }
-}
-
-// MARK: - Chat View
-
-/// Renders the message list and composer for a single thread.
-struct ChatView: View {
-    let thread: AgentThread
+struct ThreadSidebarRow: View {
+    let thread: ThreadItem
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Message list
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        if thread.messages.isEmpty {
-                            WelcomeMessage()
-                        } else {
-                            ForEach(thread.messages) { message in
-                                MessageBubble(message: message)
-                                    .id(message.id)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 20)
-                }
-                .onChange(of: thread.messages.count) { _, _ in
-                    if let last = thread.messages.last {
-                        withAnimation {
-                            proxy.scrollTo(last.id, anchor: .bottom)
-                        }
-                    }
-                }
-            }
-
-            Divider()
-
-            // Composer bar
-            ComposerBar()
-                .padding(12)
-        }
-        .navigationTitle(thread.title)
-    }
-}
-
-// MARK: - Message Bubble
-
-/// A single chat message rendered as a card-style bubble.
-struct MessageBubble: View {
-    let message: ChatMessage
-
-    private var isUser: Bool { message.role == .user }
-    private var isSystem: Bool { message.role == .system }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            if isUser { Spacer(minLength: 60) }
-
-            if isSystem {
-                SystemBadge()
-            } else {
-                VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Image(systemName: isUser ? "person.fill" : "cpu")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Text(isUser ? "You" : "Agent")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Text(message.content)
-                        .textSelection(.enabled)
-                        .padding(12)
-                        .background(messageBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-            }
-
-            if !isUser { Spacer(minLength: 60) }
-        }
-        .padding(.vertical, 6)
-    }
-
-    @ViewBuilder
-    private var messageBackground: some View {
-        if isUser {
-            Color.accentColor.opacity(0.15)
-        } else {
-            Color(nsColor: .controlBackgroundColor)
-        }
-    }
-}
-
-// MARK: - System Badge
-
-/// Inline badge for system messages (tool calls, gate approvals, etc.).
-struct SystemBadge: View {
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "gearshape.fill")
-                .font(.caption)
-
-            Text("System event")
-                .font(.caption)
-        }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(.ultraThinMaterial)
-        .clipShape(Capsule())
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-    }
-}
-
-// MARK: - Welcome Message
-
-/// Displayed when a thread has no messages yet.
-struct WelcomeMessage: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 48))
-                .foregroundStyle(.tint)
-
-            Text("Ready to begin")
-                .font(.title2)
-                .fontWeight(.semibold)
-
-            Text("Type a message or command below to start a new agent session.")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.top, 120)
-    }
-}
-
-// MARK: - Empty State
-
-/// Displayed when no thread is selected.
-struct EmptyStateView: View {
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 64))
-                .foregroundStyle(.tertiary)
-
-            VStack(spacing: 8) {
-                Text("No Thread Selected")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-
-                Text("Select a thread from the sidebar, or create a new one.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
-}
-
-// MARK: - Composer Bar
-
-/// Input bar at the bottom of the chat view.
-struct ComposerBar: View {
-    @State private var inputText: String = ""
-    @FocusState private var isInputFocused: Bool
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            TextField("Message the agent\u{2026}", text: $inputText, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...6)
-                .padding(10)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
-                )
-                .focused($isInputFocused)
-                .onSubmit {
-                    sendMessage()
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                if thread.isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(Color.adOrange)
                 }
 
-            Button(action: sendMessage) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 32))
-            }
-            .buttonStyle(.plain)
-            .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .keyboardShortcut(.return, modifiers: .command)
-        }
-    }
+                Image(systemName: thread.isArchived ? "archivebox.fill" : thread.status.symbolName)
+                    .font(.system(size: 10))
+                    .foregroundStyle(thread.isArchived ? Color.adTextTertiary : thread.status.color)
 
-    private func sendMessage() {
-        let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        // TODO: Forward to agent pipeline.
-        inputText = ""
-        isInputFocused = true
-    }
-}
-
-// MARK: - Inspector View
-
-/// Right panel showing tool calls, gate approvals, and metadata.
-struct InspectorView: View {
-    @Environment(AppState.self) private var appState
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack {
-                Label("Inspector", systemImage: "sidebar.right")
-                    .font(.headline)
+                Text(thread.name)
+                    .font(.system(size: 12, weight: thread.isPinned ? .bold : .medium))
+                    .foregroundStyle(Color.adTextPrimary)
+                    .lineLimit(1)
 
                 Spacer()
 
-                Button {
-                    appState.toggleInspector()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
+                Text(thread.lastActivity, style: .relative)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.adTextTertiary)
             }
-            .padding(16)
 
-            Divider()
-
-            if let thread = appState.activeThread {
-                InspectorContent(thread: thread)
-            } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "info.circle")
-                        .font(.title2)
-                        .foregroundStyle(.secondary)
-
-                    Text("Select a thread to view details")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+            Text(thread.summary.isEmpty ? "No messages yet" : thread.summary)
+                .font(.system(size: 10))
+                .foregroundStyle(Color.adTextSecondary)
+                .lineLimit(1)
+                .padding(.leading, thread.isPinned ? 14 : 16)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .padding(.vertical, 3)
     }
 }
 
-// MARK: - Inspector Content
+// MARK: - Workbench Content View (Center Stage)
 
-/// Populated inspector showing tool calls and gates for the active thread.
-struct InspectorContent: View {
-    let thread: AgentThread
+struct WorkbenchContentView: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Color.adBackground.ignoresSafeArea()
+
+                if appState.selectedThread != nil {
+                    switch appState.activeTab {
+                    case .thread:
+                        ThreadView(viewModel: appState.currentThreadViewModel)
+                            .id(appState.selectedThread?.id)
+                    case .diff:
+                        DiffViewer(state: appState.currentDiffState)
+                    case .terminal:
+                        TerminalOutputView(manager: appState.terminalManager)
+                    case .skills:
+                        SkillsPanelView()
+                    }
+                } else {
+                    EmptyWorkspacePlaceholder()
+                }
+            }
+
+            if appState.selectedThread != nil {
+                WorkbenchStatusBar(
+                    meteringState: appState.currentThreadViewModel.meteringState,
+                    gateState: appState.currentGateState
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Empty Workspace Placeholder
+
+struct EmptyWorkspacePlaceholder: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "shield.checkered")
+                .font(.system(size: 48))
+                .foregroundStyle(Color.adOrange)
+
+            VStack(spacing: 4) {
+                Text("Adventurers Agent Harness")
+                    .font(.title3.bold())
+                    .foregroundStyle(Color.adTextPrimary)
+
+                Text("The model proposes. The harness certifies.")
+                    .font(.caption)
+                    .foregroundStyle(Color.adTextSecondary)
+            }
+
+            Button {
+                appState.createThread()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                    Text("New Thread")
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .foregroundStyle(Color.adTextPrimary)
+                .liquidGlassCapsule(strokeOpacity: 0.3)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Inspector Panel (Trailing)
+
+struct InspectorPanel: View {
+    @Environment(AppState.self) private var appState
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // Thread Info
-                InspectorSection(title: "Thread Info", icon: "info.circle") {
-                    InspectorRow(label: "ID", value: "\(thread.id.rawValue)")
-                    InspectorRow(label: "Created", value: thread.createdAt.formatted())
-                    InspectorRow(label: "Messages", value: "\(thread.messages.count)")
-                }
-
-                // Tool Calls (placeholder)
-                InspectorSection(title: "Tool Calls", icon: "wrench.and.screwdriver") {
-                    if thread.messages.isEmpty {
-                        Text("No tool calls yet")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 14) {
+                // Certification Pipeline Status
+                InspectorCard(title: "Gate Certification", icon: "shield.fill") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        GateStatusRow(name: "SyntaxGate", status: "Passed", icon: "checkmark.circle.fill", color: Color.adSuccess)
+                        GateStatusRow(name: "RepeatGate", status: "Passed", icon: "checkmark.circle.fill", color: Color.adSuccess)
+                        GateStatusRow(name: "CompilationGate", status: "Evaluating", icon: "arrow.triangle.2.circlepath", color: Color.adOrange)
+                        GateStatusRow(name: "MemoryGate", status: "Pending", icon: "clock.fill", color: Color.adTextTertiary)
+                        GateStatusRow(name: "ObjectiveGate", status: "Pending", icon: "lock.fill", color: Color.adTextTertiary)
                     }
                 }
 
-                // Gate Approvals (placeholder)
-                InspectorSection(title: "Gate Approvals", icon: "lock.shield") {
-                    Text("No pending gates")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                // Task Contract & Metering Budget
+                let metering = appState.currentThreadViewModel.meteringState
+                InspectorCard(title: "Task Budget & Metering", icon: "chart.bar.xaxis") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ContractRow(label: "Turns Executed", value: "\(metering.totalTurnsCount) / 15")
+                        ContractRow(label: "Throughput (TPS)", value: metering.formattedLiveTPS)
+                        ContractRow(label: "First Token Latency", value: metering.formattedLiveTTFT)
+                        ContractRow(label: "Context Tokens", value: "\(metering.estimatedContextTokens) / \(metering.contextWindowLimit)")
+                        ContractRow(label: "Cumulative Spend", value: metering.formattedCumulativeCost)
+                    }
                 }
 
-                // Agent Status (placeholder)
-                InspectorSection(title: "Agent Status", icon: "cpu") {
-                    InspectorRow(label: "Status", value: "Idle")
+                // Active Capabilities
+                InspectorCard(title: "Capabilities", icon: "wrench.fill") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ToolCapabilityRow(name: "AST Parser", risk: "Low", color: Color.adSuccess)
+                        ToolCapabilityRow(name: "Worktree Engine", risk: "Med", color: Color.adWarning)
+                        ToolCapabilityRow(name: "Bash Runner", risk: "High", color: Color.adOrange)
+                    }
                 }
             }
-            .padding(16)
+            .padding(14)
         }
+        .background(Color.adNavy)
+        .navigationTitle("Inspector")
     }
 }
 
-// MARK: - Inspector Section
+// MARK: - Inspector Components
 
-/// A collapsible section within the inspector panel.
-struct InspectorSection<Content: View>: View {
+struct InspectorCard<Content: View>: View {
     let title: String
     let icon: String
     @ViewBuilder let content: Content
 
-    @State private var isExpanded: Bool = true
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: icon)
-                        .font(.caption)
-                        .foregroundStyle(.tint)
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                    .foregroundStyle(Color.adOrange)
 
-                    Text(title)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-
-                    Spacer()
-
-                    Image(systemName: "chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
-                }
+                Text(title)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+                    .textCase(.uppercase)
             }
-            .buttonStyle(.plain)
 
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 6) {
-                    content
-                }
-                .padding(.leading, 20)
-            }
+            content
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.adElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+struct GateStatusRow: View {
+    let name: String
+    let status: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+                .foregroundStyle(color)
+
+            Text(name)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.adTextPrimary)
+
+            Spacer()
+
+            Text(status)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(color)
         }
     }
 }
 
-// MARK: - Inspector Row
-
-/// A key-value row inside the inspector.
-struct InspectorRow: View {
+struct ContractRow: View {
     let label: String
     let value: String
 
     var body: some View {
         HStack {
             Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 72, alignment: .trailing)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.adTextSecondary)
+
+            Spacer()
 
             Text(value)
-                .font(.caption)
-                .textSelection(.enabled)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.adTextPrimary)
         }
     }
 }
 
-// MARK: - Settings View
+struct ToolCapabilityRow: View {
+    let name: String
+    let risk: String
+    let color: Color
 
-/// Application settings accessible via Cmd+,.
-struct SettingsView: View {
+    var body: some View {
+        HStack {
+            Text(name)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.adTextPrimary)
+
+            Spacer()
+
+            Text(risk)
+                .font(.system(size: 9, weight: .bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(color.opacity(0.15))
+                .foregroundStyle(color)
+                .clipShape(Capsule())
+        }
+    }
+}
+
+// MARK: - Spotlight / Command Palette Modal
+
+struct CommandPaletteModal: View {
     @Environment(AppState.self) private var appState
-
-    var body: some View {
-        TabView {
-            GeneralSettingsView()
-                .tabItem {
-                    Label("General", systemImage: "gear")
-                }
-
-            AppearanceSettingsView()
-                .tabItem {
-                    Label("Appearance", systemImage: "paintbrush")
-                }
-        }
-        .frame(width: 450, height: 300)
-        .padding()
-    }
-}
-
-// MARK: - General Settings
-
-struct GeneralSettingsView: View {
-    var body: some View {
-        Form {
-            Section("Startup") {
-                Toggle("Open last thread on launch", isOn: .constant(true))
-                Toggle("Restore panel layout", isOn: .constant(true))
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-// MARK: - Appearance Settings
-
-struct AppearanceSettingsView: View {
-    var body: some View {
-        Form {
-            Section("Theme") {
-                Toggle("Use system appearance", isOn: .constant(false))
-
-                Picker("Accent Color", selection: .constant("Adventurers Orange")) {
-                    Text("Adventurers Orange").tag("Adventurers Orange")
-                    Text("System Blue").tag("System Blue")
-                    Text("Purple").tag("Purple")
-                    Text("Green").tag("Green")
-                }
-            }
-
-            Section("Chat") {
-                Toggle("Show timestamps", isOn: .constant(true))
-                Toggle("Compact messages", isOn: .constant(false))
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-// MARK: - About View
-
-/// Custom About window with Adventurers branding.
-struct AboutView: View {
-    private let appVersion: String = {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
-    }()
-
-    private let buildNumber: String = {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
-    }()
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openSettings) private var openSettings
+    @State private var query: String = ""
 
     var body: some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 32)
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.title3)
+                    .foregroundStyle(Color.adOrange)
 
-            // App icon / logo
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 1.0, green: 0.42, blue: 0.21),   // #FF6B35
-                                Color(red: 0.95, green: 0.35, blue: 0.15),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 80, height: 80)
+                TextField("Type a command or jump to thread...", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 15))
+                    .onSubmit {
+                        dismiss()
+                    }
 
-                Image(systemName: "figure.run.circle.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(.white)
+                Button {
+                    dismiss()
+                } label: {
+                    Text("ESC")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.adElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .foregroundStyle(Color.adTextTertiary)
+                }
+                .buttonStyle(.plain)
             }
-
-            Spacer(minLength: 16)
-
-            Text("Adventurers Harness")
-                .font(.title2)
-                .fontWeight(.bold)
-
-            Text("Version \(appVersion) (\(buildNumber))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Spacer(minLength: 12)
-
-            Text("A macOS coding agent workspace.\nBuild parallel agent threads with\nfull tool visibility and gate controls.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .lineSpacing(4)
-
-            Spacer(minLength: 20)
+            .padding(14)
+            .background(Color.adElevated)
 
             Divider()
 
-            HStack(spacing: 20) {
-                Link("Documentation", destination: URL(string: "https://github.com/bytecats/adventurers-harness")!)
-                    .font(.callout)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    CommandItemRow(title: "Settings & LLM Providers", subtitle: "Configure API keys, OpenCode, GLM, and gateways", icon: "gearshape", shortcut: "⌘,") {
+                        dismiss()
+                        openSettings()
+                    }
 
-                Link("Report an Issue", destination: URL(string: "https://github.com/bytecats/adventurers-harness/issues")!)
-                    .font(.callout)
+                    CommandItemRow(title: "New Agent Thread", subtitle: "Start a fresh task session", icon: "square.and.pencil", shortcut: "⌘N") {
+                        appState.createThread()
+                        dismiss()
+                    }
+
+                    CommandItemRow(title: "Switch to Diffs View", subtitle: "Review changes proposed by agent", icon: "arrow.triangle.branch", shortcut: "⌘2") {
+                        appState.activeTab = .diff
+                        dismiss()
+                    }
+
+                    CommandItemRow(title: "Open Terminal Logs", subtitle: "Inspect bash execution output", icon: "terminal", shortcut: "⌘3") {
+                        appState.activeTab = .terminal
+                        dismiss()
+                    }
+
+                    CommandItemRow(title: "Toggle Inspector", subtitle: "View gate certification breakdown", icon: "sidebar.right", shortcut: "⌘I") {
+                        appState.toggleInspector()
+                        dismiss()
+                    }
+                }
+                .padding(10)
             }
-            .padding(.vertical, 12)
-
-            Text("\u{00A9} 2026 ByteCats. All rights reserved.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
         }
-        .frame(width: 360, height: 440)
+        .frame(width: 520, height: 320)
+        .background(Color.adBackground)
     }
 }
 
-// MARK: - Menu Bar Commands
+struct CommandItemRow: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let shortcut: String
+    let action: () -> Void
 
-/// Custom menu commands for the app.
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.adOrange)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.adTextPrimary)
+
+                    Text(subtitle)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.adTextTertiary)
+                }
+
+                Spacer()
+
+                Text(shortcut)
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.adElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .foregroundStyle(Color.adTextSecondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Keyboard Commands
+
 struct AgentCommands: Commands {
     let appState: AppState
 
     var body: some Commands {
-        CommandGroup(after: .newItem) {
+        CommandGroup(replacing: .newItem) {
             Button("New Thread") {
                 appState.createThread()
             }
             .keyboardShortcut("n", modifiers: .command)
 
-            Divider()
+            Button("Spotlight Search") {
+                appState.showsCommandPalette = true
+            }
+            .keyboardShortcut("k", modifiers: .command)
+        }
+
+        CommandGroup(after: .toolbar) {
+            Button("Toggle Sidebar") {
+                appState.toggleSidebar()
+            }
+            .keyboardShortcut("b", modifiers: .command)
 
             Button("Toggle Inspector") {
                 appState.toggleInspector()
             }
             .keyboardShortcut("i", modifiers: .command)
-        }
 
-        CommandGroup(after: .toolbar) {
-            Button("Toggle Sidebar") {
-                withAnimation(.spring(response: 0.3)) {
-                    appState.showsSidebar.toggle()
-                }
-            }
-            .keyboardShortcut("s", modifiers: [.command, .control])
-        }
+            Divider()
 
-        // Custom About menu item.
-        CommandGroup(replacing: .appInfo) {
-            Button("About Adventurers Harness") {
-                NSApplication.shared.keyWindow?.contentViewController?
-                    .presentedViewControllers?.forEach {
-                        $0.dismiss(nil)
-                    }
-                NSApp.sendAction(Selector(("showSettingsWindow")), to: nil, from: nil)
+            Button("Switch to Thread Tab") {
+                appState.activeTab = .thread
             }
+            .keyboardShortcut("1", modifiers: .command)
+
+            Button("Switch to Diffs Tab") {
+                appState.activeTab = .diff
+            }
+            .keyboardShortcut("2", modifiers: .command)
+
+            Button("Switch to Terminal Tab") {
+                appState.activeTab = .terminal
+            }
+            .keyboardShortcut("3", modifiers: .command)
+
+            Button("Switch to Skills Tab") {
+                appState.activeTab = .skills
+            }
+            .keyboardShortcut("4", modifiers: .command)
         }
     }
 }
 
-// MARK: - Preview
+// MARK: - About View
 
-#if DEBUG
-#Preview("Main Window") {
-    ContentView()
-        .environment(AppState())
+struct AboutView: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "shield.checkered")
+                .font(.system(size: 56))
+                .foregroundStyle(Color.adOrange)
+            Text("Adventurers Harness")
+                .font(.title2.bold())
+                .foregroundStyle(Color.adTextPrimary)
+            Text("Swift 6 Native macOS Coding Agent Harness")
+                .font(.callout)
+                .foregroundStyle(Color.adTextSecondary)
+            Text("The model proposes. The harness certifies.")
+                .font(.subheadline)
+                .foregroundStyle(Color.adTextTertiary)
+                .italic()
+            Divider()
+            Text("Version 1.0.0 • macOS Native")
+                .font(.caption)
+                .foregroundStyle(Color.adTextSecondary)
+        }
+        .padding(32)
+        .frame(width: 380, height: 320)
+        .background(Color.adBackground)
+    }
 }
-#endif

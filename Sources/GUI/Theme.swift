@@ -10,55 +10,54 @@ import SwiftUI
 // MARK: - Color Palette
 
 extension Color {
-    // ─── Brand ───────────────────────────────────────────────────────────
-    /// Adventurers Orange — primary accent
-    static let adOrange      = Color(hex: 0xFF6B35)
-    /// Deep Navy — primary background tone
-    static let adNavy        = Color(hex: 0x0D1B2A)
-    /// Midnight — darker surface
-    static let adMidnight    = Color(hex: 0x1B2838)
+    // ─── Sleek Apple macOS Pro Palette ────────────────────────────────────
+    /// Sleek Apple Accent — Frost Platinum / Pure White
+    static let adAccent      = Color(hex: 0xF5F5F7)
+    /// Monochromatic Titanium White
+    static let adOrange      = Color(hex: 0xF5F5F7) // Retained for symbol compatibility
+    /// Deep Obsidian Charcoal — sleek macOS dark backdrop
+    static let adNavy        = Color(hex: 0x09090B)
+    /// Graphite Glass Surface
+    static let adMidnight    = Color(hex: 0x121214)
 
-    // ─── Semantic: Success ───────────────────────────────────────────────
-    static let adSuccess     = Color(hex: 0x34D399)
-    static let adSuccessDim  = Color(hex: 0x065F46)
+    // ─── Semantic: Apple System Colors ───────────────────────────────────
+    static let adSuccess     = Color(hex: 0x30D158) // Apple Green
+    static let adSuccessDim  = Color(hex: 0x14532D)
 
-    // ─── Semantic: Warning ──────────────────────────────────────────────
-    static let adWarning     = Color(hex: 0xFBBF24)
-    static let adWarningDim  = Color(hex: 0x78350F)
+    static let adWarning     = Color(hex: 0xFFD60A) // Apple Yellow
+    static let adWarningDim  = Color(hex: 0x713F12)
 
-    // ─── Semantic: Error ─────────────────────────────────────────────────
-    static let adError       = Color(hex: 0xF87171)
+    static let adError       = Color(hex: 0xFF453A) // Apple Red
     static let adErrorDim    = Color(hex: 0x7F1D1D)
 
-    // ─── Semantic: Info ──────────────────────────────────────────────────
-    static let adInfo        = Color(hex: 0x60A5FA)
-    static let adInfoDim     = Color(hex: 0x1E3A5F)
+    static let adInfo        = Color(hex: 0x0A84FF) // Apple Blue
+    static let adInfoDim     = Color(hex: 0x1E3A8A)
 
     // ─── Surfaces ────────────────────────────────────────────────────────
-    static let adBackground  = Color(hex: 0x0D1117)
-    static let adElevated    = Color(hex: 0x161B22)
-    static let adOverlay     = Color(hex: 0x21262D)
-    static let adCard        = Color(hex: 0x1C2128)
-    static let adDivider     = Color.white.opacity(0.06)
+    static let adBackground  = Color(hex: 0x09090B) // Pure Obsidian
+    static let adElevated    = Color(hex: 0x141417) // Deep Charcoal
+    static let adOverlay     = Color(hex: 0x1C1C21) // Frosted Slate
+    static let adCard        = Color(hex: 0x16161A) // Glass Plate
+    static let adDivider     = Color.white.opacity(0.08)
 
     // ─── Text ────────────────────────────────────────────────────────────
-    static let adTextPrimary   = Color(white: 0.95)
+    static let adTextPrimary   = Color(white: 0.98)
     static let adTextSecondary = Color(white: 0.65)
-    static let adTextTertiary  = Color(white: 0.40)
+    static let adTextTertiary  = Color(white: 0.42)
 
     // ─── Gate Colors (permission gates) ──────────────────────────────────
-    static let adSyntaxGate       = Color(hex: 0x60A5FA)  // blue
-    static let adRepeatGate       = Color(hex: 0xA78BFA)  // purple
-    static let adCompilationGate  = Color(hex: 0x34D399)  // green
-    static let adMemoryGate       = Color(hex: 0xFB923C)  // orange
-    static let adObjectiveGate    = Color(hex: 0xF87171)  // red
+    static let adSyntaxGate       = Color(hex: 0x64D2FF)  // Cyan
+    static let adRepeatGate       = Color(hex: 0xBF5AF2)  // Purple
+    static let adCompilationGate  = Color(hex: 0x30D158)  // Emerald
+    static let adMemoryGate       = Color(hex: 0xFF9F0A)  // Amber
+    static let adObjectiveGate    = Color(hex: 0xFF453A)  // Coral
 
     // ─── Risk Levels (permission system) ─────────────────────────────────
     static let adRiskNone      = Color(white: 0.40)
-    static let adRiskLow       = Color(hex: 0x34D399)
-    static let adRiskMedium    = Color(hex: 0xFBBF24)
-    static let adRiskHigh      = Color(hex: 0xFB923C)
-    static let adRiskCritical  = Color(hex: 0xF87171)
+    static let adRiskLow       = Color(hex: 0x30D158)
+    static let adRiskMedium    = Color(hex: 0xFFD60A)
+    static let adRiskHigh      = Color(hex: 0xFF9F0A)
+    static let adRiskCritical  = Color(hex: 0xFF453A)
 }
 
 // MARK: - Hex Initializer
@@ -352,13 +351,13 @@ extension View {
 
 /// Adds a colored left-border indicating risk level, used in permission lists.
 struct RiskBorder: ViewModifier {
-    let level: RiskLevel
+    let level: PermissionRiskLevel
 
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(level.color)
+                    .fill(level.displayColor)
                     .frame(width: 3)
             }
     }
@@ -366,22 +365,146 @@ struct RiskBorder: ViewModifier {
 
 extension View {
     /// Adds a risk-level accent border on the leading edge.
-    func adRiskBorder(_ level: RiskLevel) -> some View {
+    func adRiskBorder(_ level: PermissionRiskLevel) -> some View {
         modifier(RiskBorder(level: level))
+    }
+}
+
+// ── Liquid Glass Materials & Surfaces ──────────────────────────────────────────
+
+public struct LiquidGlassCard: ViewModifier {
+    public var cornerRadius: CGFloat = 12
+    public var strokeOpacity: Double = 0.18
+    public var glowColor: Color = .clear
+    public var isHovered: Bool = false
+
+    public func body(content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(.ultraThinMaterial)
+
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.04),
+                                    Color.white.opacity(0.01),
+                                    Color.black.opacity(0.25)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    if glowColor != .clear {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .stroke(glowColor.opacity(0.35), lineWidth: 1)
+                            .blur(radius: 6)
+                    }
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            stops: [
+                                .init(color: Color.white.opacity(isHovered ? strokeOpacity + 0.15 : strokeOpacity), location: 0.0),
+                                .init(color: Color.white.opacity(0.06), location: 0.4),
+                                .init(color: Color.white.opacity(0.02), location: 0.8),
+                                .init(color: Color.white.opacity(0.10), location: 1.0)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.35), radius: 14, x: 0, y: 5)
+    }
+}
+
+public struct LiquidGlassCapsule: ViewModifier {
+    public var strokeOpacity: Double = 0.22
+    public var glowColor: Color = .clear
+
+    public func body(content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    Capsule(style: .continuous)
+                        .fill(.ultraThinMaterial)
+
+                    Capsule(style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.06),
+                                    Color.black.opacity(0.30)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                }
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            stops: [
+                                .init(color: Color.white.opacity(strokeOpacity), location: 0.0),
+                                .init(color: Color.white.opacity(0.05), location: 0.5),
+                                .init(color: Color.white.opacity(0.12), location: 1.0)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.40), radius: 16, x: 0, y: 6)
+    }
+}
+
+extension View {
+    public func liquidGlassCard(
+        cornerRadius: CGFloat = 12,
+        strokeOpacity: Double = 0.18,
+        glowColor: Color = .clear,
+        isHovered: Bool = false
+    ) -> some View {
+        modifier(LiquidGlassCard(
+            cornerRadius: cornerRadius,
+            strokeOpacity: strokeOpacity,
+            glowColor: glowColor,
+            isHovered: isHovered
+        ))
+    }
+
+    public func liquidGlassCapsule(
+        strokeOpacity: Double = 0.22,
+        glowColor: Color = .clear
+    ) -> some View {
+        modifier(LiquidGlassCapsule(
+            strokeOpacity: strokeOpacity,
+            glowColor: glowColor
+        ))
     }
 }
 
 // MARK: - Risk Level
 
 /// Permission risk levels used across the permission system and gate UI.
-enum RiskLevel: String, CaseIterable, Sendable {
+enum PermissionRiskLevel: String, CaseIterable, Sendable {
     case none
     case low
     case medium
     case high
     case critical
 
-    var color: Color {
+    var displayColor: Color {
         switch self {
         case .none:     return .adRiskNone
         case .low:      return .adRiskLow
@@ -407,7 +530,7 @@ enum RiskLevel: String, CaseIterable, Sendable {
 /// The five compilation / analysis gates in the Adventurers pipeline.
 enum GateType: String, CaseIterable, Sendable {
     case syntax
-    case repeat
+    case `repeat`
     case compilation
     case memory
     case objective

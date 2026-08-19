@@ -45,6 +45,7 @@ enum GateIdentifier: String, Sendable, CaseIterable, Identifiable {
     case repeatDetection = "repeat"
     case compilation = "compilation"
     case memory = "memory"
+    case diff = "diff"
     case objective = "objective"
 
     var id: String { rawValue }
@@ -56,6 +57,7 @@ enum GateIdentifier: String, Sendable, CaseIterable, Identifiable {
         case .repeatDetection: "arrow.triangle.branch"
         case .compilation:   "hammer.fill"
         case .memory:        "memorychip"
+        case .diff:          "doc.diff"
         case .objective:     "target"
         }
     }
@@ -67,6 +69,7 @@ enum GateIdentifier: String, Sendable, CaseIterable, Identifiable {
         case .repeatDetection: "Repeat"
         case .compilation:   "Compilation"
         case .memory:        "Memory"
+        case .diff:          "Diff"
         case .objective:     "Objective"
         }
     }
@@ -82,6 +85,8 @@ enum GateIdentifier: String, Sendable, CaseIterable, Identifiable {
             "Compiles output to verify syntactic correctness against the target compiler."
         case .memory:
             "Audits memory allocations for leaks, excessive copies, and unbounded growth."
+        case .diff:
+            "Validates file changes are safe and won't corrupt existing code."
         case .objective:
             "Verifies the task contract deliverables are actually satisfied."
         }
@@ -107,26 +112,14 @@ struct GateNode: Identifiable, Sendable {
 /// Observable state container for the entire gate pipeline visualization.
 ///
 /// The harness updates this as each gate evaluates. The view never drives evaluation.
-@Observable
 @MainActor
-final class GatePipelineState {
-    /// Ordered gate nodes in pipeline sequence.
-    var nodes: [GateNode]
-
-    /// Index of the gate currently being evaluated, if any.
-    var activeGateIndex: Int?
-
-    /// Overall pipeline outcome: nil until all terminal gates resolve.
-    var allPassed: Bool?
-
-    /// Whether the detail panel is expanded.
-    var isDetailExpanded: Bool = false
-
-    /// Currently selected gate for detail view (nil = none).
-    var selectedGateID: GateIdentifier?
-
-    /// Total elapsed time across all gates.
-    var totalElapsed: TimeInterval = 0
+final class GatePipelineState: ObservableObject {
+    @Published var nodes: [GateNode]
+    @Published var activeGateIndex: Int?
+    @Published var allPassed: Bool?
+    @Published var isDetailExpanded: Bool = false
+    @Published var selectedGateID: GateIdentifier?
+    @Published var totalElapsed: TimeInterval = 0
 
     init(gates: [GateIdentifier] = GateIdentifier.allCases) {
         self.nodes = gates.map { GateNode(id: $0) }
@@ -746,7 +739,7 @@ private struct CelebrationView: View {
         sparkles = (0..<sparkleCount).map { i in
             let angle = Double(i) * (2 * .pi / Double(sparkleCount))
             let radius = Double.random(in: 40...160)
-            Sparkle(
+            return Sparkle(
                 id: i,
                 symbol: symbols.randomElement()!,
                 color: colors.randomElement()!,
@@ -798,7 +791,7 @@ private struct Sparkle: Identifiable {
 /// GateProgressView(state: state)
 /// ```
 struct GateProgressView: View {
-    @Bindable var state: GatePipelineState
+    @ObservedObject var state: GatePipelineState
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1004,47 +997,6 @@ struct GateProgressView: View {
 
 // MARK: - Preview
 
-#if DEBUG
-#Preview("All Passed") {
-    let state = GatePipelineState()
-    state.passGate(.syntax, result: GateResult(passed: true, gateName: "syntax", output: "Syntax OK"), elapsed: 0.034)
-    state.passGate(.repeatDetection, result: GateResult(passed: true, gateName: "repeat", output: "Unique submission"), elapsed: 0.012)
-    state.passGate(.compilation, result: GateResult(passed: true, gateName: "compilation", output: "Compiled successfully"), elapsed: 1.203)
-    state.passGate(.memory, result: GateResult(passed: true, gateName: "memory", output: "No leaks detected"), elapsed: 0.456)
-    state.passGate(.objective, result: GateResult(passed: true, gateName: "objective", output: "All deliverables satisfied"), elapsed: 0.089)
-    state.allPassed = true
 
-    return GateProgressView(state: state)
-        .padding(30)
-        .frame(width: 800)
-}
 
-#Preview("Mixed Results") {
-    let state = GatePipelineState()
-    state.passGate(.syntax, result: GateResult(passed: true, gateName: "syntax", output: "Syntax OK"), elapsed: 0.021)
-    state.failGate(.repeatDetection, result: GateResult(passed: false, gateName: "repeat", error: "Identical submission to round 3"), errorCount: 1, elapsed: 0.008)
-    state.selectedGateID = .repeatDetection
-    state.isDetailExpanded = true
 
-    return GateProgressView(state: state)
-        .padding(30)
-        .frame(width: 800)
-}
-
-#Preview("Running") {
-    let state = GatePipelineState()
-    state.passGate(.syntax, result: GateResult(passed: true, gateName: "syntax", output: "OK"), elapsed: 0.03)
-    state.passGate(.repeatDetection, result: GateResult(passed: true, gateName: "repeat", output: "OK"), elapsed: 0.01)
-    state.startGate(.compilation)
-
-    return GateProgressView(state: state)
-        .padding(30)
-        .frame(width: 800)
-}
-
-#Preview("All Pending") {
-    GateProgressView(state: GatePipelineState())
-        .padding(30)
-        .frame(width: 800)
-}
-#endif

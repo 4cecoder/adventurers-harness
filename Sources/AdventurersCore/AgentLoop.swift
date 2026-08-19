@@ -2,6 +2,7 @@
 // The core execution loop: propose -> gate -> verify -> repair
 
 import Foundation
+import LLMProviders
 
 /// The agent loop orchestrates the propose-gate-certify cycle.
 /// The model proposes work. The harness certifies completion.
@@ -22,7 +23,6 @@ public actor AgentLoop {
         self.failChain = FailChain()
     }
 
-    /// Execute a task through the full agent loop.
     public func execute(_ task: TaskContract) async throws -> TaskResult {
         var messages: [Message] = [
             Message(role: .system, content: systemPrompt(for: task)),
@@ -31,9 +31,8 @@ public actor AgentLoop {
         var outputs: [AgentOutput] = []
 
         for round in 0..<task.maxRounds {
-            journal.append(.roundStart, payload: ["round": round, "taskID": task.taskID])
+            await journal.append(.roundStart, payload: ["round": "\(round)", "taskID": task.taskID])
 
-            // 1. PROPOSE - let the model generate
             let response = try await provider.send(messages: messages, config: config.llm)
             let output = AgentOutput(
                 content: response.content,
@@ -43,23 +42,20 @@ public actor AgentLoop {
             )
             outputs.append(output)
 
-            // Execute any tool calls
             var toolResults: [ToolResult] = []
             for call in output.toolCalls {
                 guard let tool = tools[call.name] else { continue }
                 let result = try await tool.execute(arguments: call.arguments)
                 toolResults.append(result)
-                journal.append(.toolExecution, payload: ["tool": call.name, "success": result.error == nil])
+                await journal.append(.toolExecution, payload: ["tool": call.name, "success": "\(result.error == nil)"])
             }
 
-            // Add assistant response and tool results to context
             messages.append(Message(role: .assistant, content: response.content))
-            for (call, result) in zip(output.toolCalls, toolResults) {
+            for result in toolResults {
                 let resultContent = result.error ?? result.output
                 messages.append(Message(role: .tool, content: resultContent))
             }
 
-            // 2. GATE - run deterministic checks
             let gateContext = GateContext(taskID: task.taskID, contract: task, previousOutputs: outputs)
             let gateResults = await runGates(output: output, context: gateContext)
 
@@ -69,21 +65,20 @@ public actor AgentLoop {
             }
 
             if allRequiredPassed {
-                journal.append(.taskCompleted, payload: ["round": round, "taskID": task.taskID])
+                await journal.append(.taskCompleted, payload: ["round": "\(round)", "taskID": task.taskID])
                 return TaskResult.success(output: output, rounds: round + 1, journal: journal)
             }
 
-            // 3. REPAIR - feed gate failures back to model
             let failures = gateResults.filter { !$0.passed }
-            let mitigation = failChain.mitigate(failures: failures)
+            let mitigation = await failChain.mitigate(failures: failures)
             messages.append(Message(role: .user, content: mitigation))
-            journal.append(.gateFailed, payload: [
-                "round": round,
-                "failures": failures.map(\.gateName),
+            await journal.append(.gateFailed, payload: [
+                "round": "\(round)",
+                "failures": failures.map(\.gateName).joined(separator: ","),
             ])
         }
 
-        journal.append(.taskFailed, payload: ["taskID": task.taskID, "reason": "budget_exhausted"])
+        await journal.append(.taskFailed, payload: ["taskID": task.taskID, "reason": "budget_exhausted"])
         return TaskResult.failed(rounds: task.maxRounds, journal: journal)
     }
 
@@ -93,9 +88,9 @@ public actor AgentLoop {
             let result = await gate.evaluate(output, context: context)
             results.append(result)
             if !result.passed && gate.required {
-                failChain.record(gate: gate.name)
+                await failChain.record(gate: gate.name)
             } else if result.passed {
-                failChain.reset(gate: gate.name)
+                await failChain.reset(gate: gate.name)
             }
         }
         return results

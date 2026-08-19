@@ -4,7 +4,6 @@
 import Foundation
 
 /// A TaskContract defines the scope and constraints for a single agent task.
-/// The harness reads it. The agent never modifies it.
 public struct TaskContract: Sendable {
     public let taskID: String
     public let prompt: String

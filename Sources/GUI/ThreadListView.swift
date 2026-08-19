@@ -6,13 +6,13 @@ import SwiftUI
 // MARK: - Thread Status
 
 /// Status of an agent thread with associated SF Symbol and color.
-enum ThreadStatus: String, Sendable, CaseIterable, Codable {
+public enum ThreadStatus: String, Sendable, CaseIterable, Codable {
     case running
     case completed
     case failed
 
     /// SF Symbol name for this status.
-    var symbolName: String {
+    public var symbolName: String {
         switch self {
         case .running:   "arrow.triangle.2.circlepath"
         case .completed: "checkmark.circle.fill"
@@ -21,16 +21,16 @@ enum ThreadStatus: String, Sendable, CaseIterable, Codable {
     }
 
     /// Accent color for this status.
-    var color: Color {
+    public var color: Color {
         switch self {
-        case .running:   .orange
-        case .completed: .green
-        case .failed:    .red
+        case .running:   .adOrange
+        case .completed: .adSuccess
+        case .failed:    .adError
         }
     }
 
     /// Localized label.
-    var label: String {
+    public var label: String {
         switch self {
         case .running:   "Running"
         case .completed: "Completed"
@@ -42,28 +42,37 @@ enum ThreadStatus: String, Sendable, CaseIterable, Codable {
 // MARK: - Thread Item
 
 /// A single agent thread displayed in the sidebar.
-struct ThreadItem: Identifiable, Sendable, Hashable {
-    let id: UUID
-    var name: String
-    var status: ThreadStatus
-    var summary: String
-    var lastActivity: Date
-    var agentName: String
+public struct ThreadItem: Identifiable, Sendable, Hashable {
+    public let id: UUID
+    public var name: String
+    public var status: ThreadStatus
+    public var summary: String
+    public var lastActivity: Date
+    public var createdAt: Date
+    public var agentName: String
+    public var isArchived: Bool
+    public var isPinned: Bool
 
-    init(
+    public init(
         id: UUID = UUID(),
         name: String,
-        status: ThreadStatus,
-        summary: String,
-        lastActivity: Date = .now,
-        agentName: String = "Adventurer"
+        status: ThreadStatus = .running,
+        summary: String = "",
+        lastActivity: Date = Date(),
+        createdAt: Date = Date(),
+        agentName: String = "Adventurer",
+        isArchived: Bool = false,
+        isPinned: Bool = false
     ) {
         self.id = id
         self.name = name
         self.status = status
         self.summary = summary
         self.lastActivity = lastActivity
+        self.createdAt = createdAt
         self.agentName = agentName
+        self.isArchived = isArchived
+        self.isPinned = isPinned
     }
 }
 
@@ -72,7 +81,7 @@ struct ThreadItem: Identifiable, Sendable, Hashable {
 /// Observable state container for the thread list sidebar.
 @Observable
 @MainActor
-final class ThreadViewModel {
+final class ThreadListViewModel {
     var threads: [ThreadItem] = []
     var searchText: String = ""
     var selectedThreadID: UUID?
@@ -319,7 +328,7 @@ struct ThreadRowView: View {
 
 /// Left sidebar displaying all agent threads, organized by status.
 struct ThreadListView: View {
-    @State private var viewModel = ThreadViewModel()
+    @State private var viewModel = ThreadListViewModel()
     @State private var threadToDelete: ThreadItem?
     @State private var threadToRename: ThreadItem?
     @State private var renameText: String = ""
@@ -668,7 +677,3 @@ struct ThreadListView: View {
 
 // MARK: - Preview
 
-#Preview("Thread Sidebar") {
-    ThreadListView()
-        .frame(width: 320, height: 600)
-}

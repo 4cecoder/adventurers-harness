@@ -1,3 +1,4 @@
+import UniformTypeIdentifiers
 // TUI - SkillsPanel
 // Skills management panel inspired by Codex's skill system:
 // "Bundles instructions, resources, and scripts so the agent can reliably complete tasks."
@@ -77,6 +78,17 @@ public enum SkillCategory: String, CaseIterable, Codable, Sendable {
         case .documentation: "purple"
         case .research: "teal"
         case .custom: "gray"
+        }
+    }
+
+    public var displayColor: Color {
+        switch self {
+        case .codeGeneration: .blue
+        case .testing: .green
+        case .deployment: .orange
+        case .documentation: .purple
+        case .research: .teal
+        case .custom: .gray
         }
     }
 
@@ -265,7 +277,7 @@ public struct SkillCardView: View {
                 HStack {
                     Image(systemName: skill.category.icon)
                         .font(.title3)
-                        .foregroundStyle(skill.category.accentColor)
+                        .foregroundStyle(skill.category.displayColor)
                         .frame(width: 28, height: 28)
 
                     Spacer()
@@ -276,9 +288,9 @@ public struct SkillCardView: View {
                         .padding(.vertical, 2)
                         .background(
                             Capsule()
-                                .fill(skill.category.accentColor.opacity(0.15))
+                                .fill(skill.category.displayColor.opacity(0.15))
                         )
-                        .foregroundStyle(skill.category.accentColor)
+                        .foregroundStyle(skill.category.displayColor)
                 }
 
                 // Name
@@ -327,7 +339,7 @@ public struct SkillCardView: View {
                                     ? Color.accentColor.opacity(0.12)
                                     : Color.secondary.opacity(0.12))
                         )
-                        .foregroundStyle(skill.group == .builtIn ? .accent : .secondary)
+                        .foregroundStyle(skill.group == .builtIn ? Color.accentColor : .secondary)
                 }
             }
             .padding(14)
@@ -339,7 +351,7 @@ public struct SkillCardView: View {
         .scaleEffect(isHovered ? 1.02 : 1.0)
         .shadow(
             color: skill.isEnabled
-                ? skill.category.accentColor.opacity(isHovered ? 0.35 : 0.15)
+                ? skill.category.displayColor.opacity(isHovered ? 0.35 : 0.15)
                 : .clear,
             radius: isHovered ? 8 : 4,
             y: isHovered ? 4 : 2
@@ -358,7 +370,7 @@ public struct SkillCardView: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(
                         skill.isEnabled
-                            ? skill.category.accentColor.opacity(0.4)
+                            ? skill.category.displayColor.opacity(0.4)
                             : Color.secondary.opacity(0.2),
                         lineWidth: skill.isEnabled ? 1.5 : 1
                     )
@@ -368,7 +380,7 @@ public struct SkillCardView: View {
                 skill.isEnabled
                     ? RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(
-                            skill.category.accentColor.opacity(0.12),
+                            skill.category.displayColor.opacity(0.12),
                             lineWidth: 4
                         )
                     : nil
@@ -438,7 +450,7 @@ public struct SkillDetailView: View {
             HStack {
                 Image(systemName: skill.category.icon)
                     .font(.largeTitle)
-                    .foregroundStyle(skill.category.accentColor)
+                    .foregroundStyle(skill.category.displayColor)
                 VStack(alignment: .leading) {
                     Text(skill.name)
                         .font(.title2.bold())
@@ -452,9 +464,9 @@ public struct SkillDetailView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(
-                        Capsule().fill(skill.category.accentColor.opacity(0.12))
+                        Capsule().fill(skill.category.displayColor.opacity(0.12))
                     )
-                    .foregroundStyle(skill.category.accentColor)
+                    .foregroundStyle(skill.category.displayColor)
             }
 
             Text(skill.description)
@@ -634,11 +646,11 @@ public struct CreateSkillCardView: View {
                     .strokeBorder(
                         style: StrokeStyle(
                             lineWidth: 2,
-                            dash: [8, 6],
-                            lineCap: .round
+                            lineCap: .round,
+                            dash: [8, 6]
                         )
                     )
-                    .foregroundStyle(isHovered ? .accent : .tertiary)
+                    .foregroundStyle(isHovered ? Color.accentColor : Color.secondary)
             )
             .scaleEffect(isHovered ? 1.02 : 1.0)
             .animation(.easeInOut(duration: 0.2), value: isHovered)
@@ -788,7 +800,7 @@ public struct SkillsPanelView: View {
 
     private func categoryPill(_ category: SkillCategory?, label: String) -> some View {
         let isSelected = store.selectedCategory == category
-        let color = category?.accentColor ?? .accentColor
+        let color = category?.displayColor ?? Color.gray
 
         return Button {
             withAnimation(.easeInOut(duration: 0.2)) {

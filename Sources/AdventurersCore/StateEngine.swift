@@ -4,7 +4,6 @@
 import Foundation
 
 /// Agent lifecycle states with enforced transitions.
-/// The harness owns state. The model proposes work.
 public enum AgentState: String, Sendable, CaseIterable {
     case idle
     case taskingested
@@ -16,7 +15,6 @@ public enum AgentState: String, Sendable, CaseIterable {
     case retrying
     case failed
 
-    /// Allowed next states from current state.
     public var allowedTransitions: Set<AgentState> {
         switch self {
         case .idle: return [.taskingested]
@@ -42,7 +40,6 @@ public actor StateEngine {
         guard currentState.allowedTransitions.contains(newState) else {
             throw StateError.invalidTransition(from: currentState, to: newState)
         }
-        let previous = currentState
         currentState = newState
         stateHistory.append((newState, Date()))
     }

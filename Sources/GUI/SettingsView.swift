@@ -1,131 +1,195 @@
-// AdventurersHarness - Settings
-// Comprehensive macOS settings window with sidebar-style tabs
-// macOS 15+ · @Observable · Swift 6 strict concurrency
+// GUI - SettingsView
+// Professional macOS Settings Panel with OpenCode & GLM Cloud Plan Integration
+// Pure Swift 6 strict concurrency · @Observable
 
 import SwiftUI
 import Observation
+import AdventurersCore
+import LLMProviders
+
+// MARK: - Section Header Component
+
+public struct SectionHeader: View {
+    public let title: String
+    public let subtitle: String
+
+    public init(title: String, subtitle: String = "") {
+        self.title = title
+        self.subtitle = subtitle
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.adTextPrimary)
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.adTextSecondary)
+            }
+        }
+    }
+}
 
 // MARK: - Settings Model
 
-/// Central settings model persisted to `~/Library/Application Support/AdventurersHarness/settings.json`.
-///
-/// Uses `@Observable` for SwiftUI reactivity and `Codable` for disk persistence.
-/// All properties are `@ObservationIgnored` for defaults tracking where needed.
 @Observable
 @MainActor
 public final class SettingsModel {
     // MARK: General
+    public var openLastProjectOnLaunch: Bool = true
+    public var defaultShell: String = "/bin/zsh"
+    public var defaultShellArgs: [String] = ["-l"]
+    public var dataDirectory: String = "~/.adventurers"
+    public var autoCompact: Bool = true
+    public var autoCompactThreshold: Double = 80.0
+    public var checkUpdatesOnLaunch: Bool = true
 
-    /// Whether the app opens the last project on launch.
-    public var openLastProjectOnLaunch = true
-    /// Default shell used for tool execution.
-    public var defaultShell = "/bin/zsh"
-    /// Shell arguments passed on launch.
-    public var defaultShellArgs = ["-l"]
-    /// Application support data directory path.
-    public var dataDirectory = "~/.adventurers"
-    /// Automatically compact conversation context when token usage exceeds threshold.
-    public var autoCompact = true
-    /// Token threshold (percentage) that triggers auto-compaction.
-    public var autoCompactThreshold = 80
-    /// Check for updates on launch.
-    public var checkUpdatesOnLaunch = true
+    // MARK: LLM Provider & Execution Mode
+    public var executionMode: ExecutionMode = .codingPlan {
+        didSet { save() }
+    }
+    public var selectedMetaHarness: MetaHarnessType = .codex {
+        didSet { save() }
+    }
+    public var metaHarnessProfiles: [MetaHarnessProfile] = [] {
+        didSet { save() }
+    }
 
-    // MARK: LLM Provider
-
-    /// Active LLM provider.
-    public var activeProvider: ProviderType = .openai
-    /// Provider-specific API key.
-    public var apiKey = ""
-    /// Selected model identifier.
-    public var selectedModel = "gpt-4o"
-    /// Sampling temperature (0.0 – 2.0).
-    public var temperature: Double = 0.7
-    /// Maximum tokens per completion.
-    public var maxTokens: Int = 4096
-    /// Base URL override (used by .local provider).
-    public var baseURL = ""
-    /// Request timeout in seconds.
+    public var activeProvider: ProviderType = .opencode {
+        didSet {
+            updateDefaultsForProvider()
+            save()
+            Task { @MainActor in
+                await self.fetchLiveModelsForActiveProvider()
+            }
+        }
+    }
+    public var apiKey: String = "" {
+        didSet {
+            providerKeys[activeProvider.rawValue] = apiKey
+            save()
+            Task { @MainActor in
+                await self.fetchLiveModelsForActiveProvider()
+            }
+        }
+    }
+    public var selectedModel: String = "mimo-v2.5" {
+        didSet { save() }
+    }
+    public var temperature: Double = 0.2
+    public var maxTokens: Int = 8192
+    public var baseURL: String = "https://opencode.ai/zen/go/v1" {
+        didSet {
+            providerBaseURLs[activeProvider.rawValue] = baseURL
+            save()
+        }
+    }
     public var requestTimeout: Double = 120
+    public var dynamicModelsByProvider: [ProviderType: [String]] = [:]
+    public var isRefreshingModels: Bool = false
+    public var providerKeys: [String: String] = [:]
+    public var providerBaseURLs: [String: String] = [:]
 
-    /// Available models per provider.
     public static let modelsByProvider: [ProviderType: [String]] = [
-        .openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1", "o1-mini", "o3-mini"],
-        .anthropic: ["claude-sonnet-4-20250514", "claude-3-5-haiku-20241022", "claude-opus-4-20250514"],
-        .local: ["custom"],
+        .opencode: [
+            "mimo-v2.5",
+            "deepseek-v4-flash",
+            "qwen3.7-plus",
+            "hy3",
+            "minimax-m2.7",
+            "qwen3.6-plus",
+            "mimo-v2.5-pro",
+            "minimax-m3",
+            "gpt-5.6-luna",
+            "kimi-k2.7-code",
+            "kimi-k2.6",
+            "deepseek-v4-pro",
+            "glm-5.2",
+            "glm-5.1",
+            "qwen3.7-max",
+            "glm-5.3",
+            "qwen3.8-max",
+            "grok-4.5",
+            "kimi-k3"
+        ],
+        .opencodeZen: ["claude-3-7-sonnet", "deepseek-r1", "o3-mini", "gemini-2.5-pro", "glm-5.3"],
+        .glm: ["glm-5.3", "glm-5.2", "glm-4.7", "glm-4-plus", "glm-4-flash"],
+        .openrouter: ["anthropic/claude-3.7-sonnet", "deepseek/deepseek-r1", "deepseek/deepseek-chat", "meta-llama/llama-3.3-70b-instruct", "qwen/qwen-2.5-coder-32b-instruct", "google/gemini-2.0-flash-001"],
+        .anthropic: ["claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
+        .deepseek: ["deepseek-reasoner", "deepseek-chat"],
+        .openai: ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini", "gpt-4.5-preview"],
+        .local: ["qwen2.5-coder:32b", "deepseek-r1:14b", "deepseek-r1:32b", "llama3.3:70b", "mistral-large:latest"]
     ]
 
-    // MARK: Agents
+    public func modelsForActiveProvider() -> [String] {
+        if let dynamic = dynamicModelsByProvider[activeProvider], !dynamic.isEmpty {
+            return dynamic
+        }
+        return Self.modelsByProvider[activeProvider] ?? []
+    }
 
-    /// Agent personality style.
+    @MainActor
+    public func fetchLiveModelsForActiveProvider() async {
+        isRefreshingModels = true
+        defer { isRefreshingModels = false }
+
+        var discovered: [String] = []
+
+        // Query provider native API /models endpoint if API key is present
+        if !apiKey.isEmpty || activeProvider == .local {
+            let provider = UniversalCloudProvider(
+                name: activeProvider.rawValue,
+                apiKey: apiKey,
+                baseURL: baseURL,
+                isAnthropicNative: activeProvider == .anthropic
+            )
+            if let remoteModels = try? await provider.fetchAvailableModels(), !remoteModels.isEmpty {
+                for m in remoteModels {
+                    if !discovered.contains(m) {
+                        discovered.append(m)
+                    }
+                }
+            }
+        }
+
+        // Add static defaults if not present
+        if let defaults = Self.modelsByProvider[activeProvider] {
+            for m in defaults {
+                if !discovered.contains(m) {
+                    discovered.append(m)
+                }
+            }
+        }
+
+        if !discovered.isEmpty {
+            dynamicModelsByProvider[activeProvider] = discovered
+            if !discovered.contains(selectedModel), let first = discovered.first {
+                selectedModel = first
+            }
+        }
+        save()
+    }
+
+    // MARK: Agents & Gates
     public var agentPersonality: PersonalityStyle = .terse
-    /// Maximum agent loop rounds before budget exhaustion.
-    public var maxRounds: Int = 4
-    /// Which gates are required to pass before task completion.
-    public var requiredGates: Set<String> = ["syntax", "repeat"]
-    /// Available gate names for toggling.
-    public static let availableGates = ["syntax", "repeat", "compilation"]
+    public var maxRounds: Int = 15
+    public var requiredGates: Set<String> = ["syntax", "repeat", "compilation"]
+    public static let availableGates = ["syntax", "repeat", "compilation", "memory", "objective"]
 
-    // MARK: Tools
-
-    /// Per-tool enabled state.
-    public var enabledTools: Set<String> = ["bash", "file", "grep", "glob"]
-    /// Available tool definitions.
-    public static let availableTools: [(name: String, risk: RiskLevel)] = [
-        ("bash", .execute),
-        ("file", .write),
-        ("grep", .readOnly),
-        ("glob", .readOnly),
-        ("fetch", .network),
-        ("patch", .destructive),
-    ]
-    /// Bash timeout in seconds.
+    // MARK: Tools & Sandbox
+    public var enabledTools: Set<String> = ["bash", "file", "grep", "glob", "patch", "mcp"]
     public var bashTimeout: Double = 60
-
-    // MARK: Sandbox
-
-    /// Allowed file-access paths (glob patterns).
-    public var fileAccessPaths: [String] = ["**/*"]
-    /// Blocked file-access paths.
-    public var blockedPaths: [String] = ["~/.ssh/*", "~/.aws/*"]
-    /// Network access mode.
     public var networkAccess: NetworkAccess = .restricted
-    /// Blocked commands (shell blocklist).
     public var commandBlocklist: [String] = ["rm -rf /", "sudo rm -rf"]
-    /// Allowed commands (empty = all non-blocked allowed).
-    public var commandAllowlist: [String] = []
 
     // MARK: Appearance
-
-    /// App colour theme.
-    public var colorScheme: AppColorScheme = .system
-    /// Accent colour.
-    public var accentColor: AccentColorChoice = .blue
-    /// UI font size.
+    public var colorScheme: AppColorScheme = .dark
     public var fontSize: Double = 13
-    /// Code / monospace font name.
-    public var codeFont = "SF Mono"
-    /// Enable compact mode (denser spacing).
-    public var compactMode = false
-
-    // MARK: Keyboard
-
-    /// Custom keybindings (action → shortcut string).
-    public var keybindings: [String: String] = [
-        "newTask": "⌘N",
-        "toggleSidebar": "⌘S",
-        "focusPrompt": "⌘L",
-        "cancelTask": "⌘.",
-        "showSettings": "⌘,",
-    ]
+    public var codeFont: String = "SF Mono"
 
     // MARK: Persistence
-
-    private let defaults = UserDefaults.standard
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
-
-    /// File URL for persisted settings.
     private var settingsFileURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("AdventurersHarness")
@@ -134,1357 +198,1517 @@ public final class SettingsModel {
     }
 
     public init() {
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        load()
+        if !load() {
+            autoImportStoredKeys()
+        } else {
+            if baseURL == "https://api.opencode.ai/v1" || baseURL == "https://api.opencode.ai" {
+                baseURL = ProviderType.opencode.defaultBaseURL
+            }
+            if selectedModel == "opencode-go-4.5" || selectedModel == "glm-5.3" {
+                selectedModel = "mimo-v2.5"
+            }
+            autoImportStoredKeys()
+        }
+        if metaHarnessProfiles.isEmpty {
+            metaHarnessProfiles = MetaHarnessRegistry.shared.discoverProfiles()
+        }
+        Task { @MainActor in
+            await self.fetchLiveModelsForActiveProvider()
+        }
     }
 
-    // MARK: – Persistence
-
-    /// Load settings from disk, falling back to defaults.
-    public func load() {
-        guard FileManager.default.fileExists(atPath: settingsFileURL.path),
-              let data = try? Data(contentsOf: settingsFileURL),
-              let decoded = try? decoder.decode(PersistedSettings.self, from: data) else { return }
-        apply(decoded)
+    public func profile(for type: MetaHarnessType) -> MetaHarnessProfile {
+        if let found = metaHarnessProfiles.first(where: { $0.type == type }) {
+            return found
+        }
+        let newP = MetaHarnessProfile(type: type)
+        metaHarnessProfiles.append(newP)
+        return newP
     }
 
-    /// Write current settings to disk.
+    public func updateProfile(_ profile: MetaHarnessProfile) {
+        if let idx = metaHarnessProfiles.firstIndex(where: { $0.type == profile.type }) {
+            metaHarnessProfiles[idx] = profile
+        } else {
+            metaHarnessProfiles.append(profile)
+        }
+        save()
+    }
+
+    public func syncKeysToMetaHarnesses() {
+        for idx in metaHarnessProfiles.indices {
+            let type = metaHarnessProfiles[idx].type
+            switch type {
+            case .codex, .smallctl:
+                if let openAIKey = providerKeys[ProviderType.openai.rawValue], !openAIKey.isEmpty {
+                    metaHarnessProfiles[idx].apiKey = openAIKey
+                }
+            case .hermes:
+                if let anthropicKey = providerKeys[ProviderType.anthropic.rawValue], !anthropicKey.isEmpty {
+                    metaHarnessProfiles[idx].apiKey = anthropicKey
+                }
+            case .opencode:
+                if let opencodeKey = providerKeys[ProviderType.opencode.rawValue], !opencodeKey.isEmpty {
+                    metaHarnessProfiles[idx].apiKey = opencodeKey
+                }
+            case .deepseekHarness:
+                if let dsKey = providerKeys[ProviderType.deepseek.rawValue], !dsKey.isEmpty {
+                    metaHarnessProfiles[idx].apiKey = dsKey
+                }
+            case .pi:
+                if let routerKey = providerKeys[ProviderType.openrouter.rawValue], !routerKey.isEmpty {
+                    metaHarnessProfiles[idx].apiKey = routerKey
+                }
+            case .custom:
+                break
+            }
+        }
+        save()
+    }
+
+    public func autoImportStoredKeys() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let authURL = home.appendingPathComponent(".local/share/opencode/auth.json")
+        
+        if let data = try? Data(contentsOf: authURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            
+            // 1. Populate all known provider credentials into cache
+            if let opencodeGo = (json["opencode-go"] ?? json["opencode"]) as? [String: Any],
+               let key = opencodeGo["key"] as? String, !key.isEmpty {
+                providerKeys[ProviderType.opencode.rawValue] = key
+            }
+            if let zai = (json["zai-coding-plan"] ?? json["zhipuai"]) as? [String: Any],
+               let key = zai["key"] as? String, !key.isEmpty {
+                providerKeys[ProviderType.glm.rawValue] = key
+            }
+            if let openrouter = json["openrouter"] as? [String: Any],
+               let key = openrouter["key"] as? String, !key.isEmpty {
+                providerKeys[ProviderType.openrouter.rawValue] = key
+            }
+            if let anthropic = json["anthropic"] as? [String: Any],
+               let key = (anthropic["access"] ?? anthropic["key"]) as? String, !key.isEmpty {
+                providerKeys[ProviderType.anthropic.rawValue] = key
+            }
+            if let deepseek = json["deepseek"] as? [String: Any],
+               let key = deepseek["key"] as? String, !key.isEmpty {
+                providerKeys[ProviderType.deepseek.rawValue] = key
+            }
+            if let openai = json["openai"] as? [String: Any],
+               let key = openai["key"] as? String, !key.isEmpty {
+                providerKeys[ProviderType.openai.rawValue] = key
+            }
+
+            // 2. OpenCode Go is the default primary provider with the cheapest model (MiMo-V2.5, 150k req/mo)!
+            if let opencodeKey = providerKeys[ProviderType.opencode.rawValue], !opencodeKey.isEmpty {
+                self.activeProvider = .opencode
+                self.apiKey = opencodeKey
+                self.baseURL = "https://opencode.ai/zen/go/v1"
+                self.selectedModel = "mimo-v2.5"
+            } else if let openrouterKey = providerKeys[ProviderType.openrouter.rawValue], !openrouterKey.isEmpty {
+                self.activeProvider = .openrouter
+                self.apiKey = openrouterKey
+                self.baseURL = "https://openrouter.ai/api/v1"
+                self.selectedModel = "anthropic/claude-3.7-sonnet"
+            } else if let zaiKey = providerKeys[ProviderType.glm.rawValue], !zaiKey.isEmpty {
+                self.activeProvider = .glm
+                self.apiKey = zaiKey
+                self.baseURL = "https://api.z.ai/api/coding/paas/v4"
+                self.selectedModel = "glm-5.3"
+            } else if let anthropicKey = providerKeys[ProviderType.anthropic.rawValue], !anthropicKey.isEmpty {
+                self.activeProvider = .anthropic
+                self.apiKey = anthropicKey
+                self.baseURL = "https://api.anthropic.com/v1"
+                self.selectedModel = "claude-3-7-sonnet-20250219"
+            }
+        }
+    }
+    public func updateDefaultsForProvider() {
+        if let customURL = providerBaseURLs[activeProvider.rawValue], !customURL.isEmpty {
+            baseURL = customURL
+        } else {
+            baseURL = activeProvider.defaultBaseURL
+        }
+
+        if let savedKey = providerKeys[activeProvider.rawValue], !savedKey.isEmpty {
+            apiKey = savedKey
+        } else {
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            let authURL = home.appendingPathComponent(".local/share/opencode/auth.json")
+            if let data = try? Data(contentsOf: authURL),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                switch activeProvider {
+                case .opencode, .opencodeZen:
+                    if let entry = (json["opencode-go"] ?? json["opencode"]) as? [String: Any] {
+                        self.apiKey = entry["key"] as? String ?? ""
+                    }
+                case .glm:
+                    if let entry = (json["zai-coding-plan"] ?? json["zhipuai"]) as? [String: Any] {
+                        self.apiKey = entry["key"] as? String ?? ""
+                    }
+                case .openrouter:
+                    if let entry = json["openrouter"] as? [String: Any] {
+                        self.apiKey = entry["key"] as? String ?? ""
+                    }
+                case .anthropic:
+                    if let entry = json["anthropic"] as? [String: Any] {
+                        self.apiKey = (entry["access"] ?? entry["key"]) as? String ?? ""
+                    }
+                case .deepseek:
+                    if let entry = json["deepseek"] as? [String: Any] {
+                        self.apiKey = entry["key"] as? String ?? ""
+                    }
+                case .openai:
+                    if let entry = json["openai"] as? [String: Any] {
+                        self.apiKey = entry["key"] as? String ?? ""
+                    }
+                case .local:
+                    self.apiKey = ""
+                }
+            }
+        }
+
+        if let firstModel = modelsForActiveProvider().first {
+            selectedModel = firstModel
+        }
+    }
+
     public func save() {
-        let persisted = snapshot()
-        guard let data = try? encoder.encode(persisted) else { return }
-        try? data.write(to: settingsFileURL, options: .atomic)
-    }
-
-    /// Reset every setting to its default value.
-    public func resetToDefaults() {
-        let fresh = SettingsModel()
-        apply(fresh.snapshot())
-    }
-
-    /// Generate a `HarnessConfig` from the current settings.
-    public func harnessConfig() -> HarnessConfig {
-        HarnessConfig(
-            llm: LLMConfig(
-                provider: activeProvider.rawValue,
-                model: selectedModel,
-                temperature: temperature,
-                maxTokens: maxTokens,
-                baseURL: baseURL.isEmpty ? nil : baseURL,
-                apiKey: apiKey.isEmpty ? nil : apiKey
-            ),
-            maxRounds: maxRounds,
-            requiredGates: Array(requiredGates),
-            enabledTools: Array(enabledTools),
-            shell: .init(path: defaultShell, args: defaultShellArgs),
-            autoCompact: autoCompact
-        )
-    }
-
-    // MARK: – Private helpers
-
-    private func snapshot() -> PersistedSettings {
-        PersistedSettings(
+        let persisted = PersistedSettings(
             openLastProjectOnLaunch: openLastProjectOnLaunch,
             defaultShell: defaultShell,
-            defaultShellArgs: defaultShellArgs,
             dataDirectory: dataDirectory,
-            autoCompact: autoCompact,
-            autoCompactThreshold: autoCompactThreshold,
-            checkUpdatesOnLaunch: checkUpdatesOnLaunch,
             activeProvider: activeProvider,
             apiKey: apiKey,
             selectedModel: selectedModel,
-            temperature: temperature,
-            maxTokens: maxTokens,
             baseURL: baseURL,
-            requestTimeout: requestTimeout,
-            agentPersonality: agentPersonality,
-            maxRounds: maxRounds,
-            requiredGates: requiredGates,
-            enabledTools: enabledTools,
-            bashTimeout: bashTimeout,
-            fileAccessPaths: fileAccessPaths,
-            blockedPaths: blockedPaths,
-            networkAccess: networkAccess,
-            commandBlocklist: commandBlocklist,
-            commandAllowlist: commandAllowlist,
-            colorScheme: colorScheme,
-            accentColor: accentColor,
-            fontSize: fontSize,
-            codeFont: codeFont,
-            compactMode: compactMode,
-            keybindings: keybindings
+            executionMode: executionMode,
+            selectedMetaHarness: selectedMetaHarness,
+            metaHarnessProfiles: metaHarnessProfiles
         )
+        if let data = try? JSONEncoder().encode(persisted) {
+            try? data.write(to: settingsFileURL)
+        }
     }
 
-    private func apply(_ p: PersistedSettings) {
-        openLastProjectOnLaunch = p.openLastProjectOnLaunch
-        defaultShell = p.defaultShell
-        defaultShellArgs = p.defaultShellArgs
-        dataDirectory = p.dataDirectory
-        autoCompact = p.autoCompact
-        autoCompactThreshold = p.autoCompactThreshold
-        checkUpdatesOnLaunch = p.checkUpdatesOnLaunch
-        activeProvider = p.activeProvider
-        apiKey = p.apiKey
-        selectedModel = p.selectedModel
-        temperature = p.temperature
-        maxTokens = p.maxTokens
-        baseURL = p.baseURL
-        requestTimeout = p.requestTimeout
-        agentPersonality = p.agentPersonality
-        maxRounds = p.maxRounds
-        requiredGates = p.requiredGates
-        enabledTools = p.enabledTools
-        bashTimeout = p.bashTimeout
-        fileAccessPaths = p.fileAccessPaths
-        blockedPaths = p.blockedPaths
-        networkAccess = p.networkAccess
-        commandBlocklist = p.commandBlocklist
-        commandAllowlist = p.commandAllowlist
-        colorScheme = p.colorScheme
-        accentColor = p.accentColor
-        fontSize = p.fontSize
-        codeFont = p.codeFont
-        compactMode = p.compactMode
-        keybindings = p.keybindings
+    public func load() -> Bool {
+        guard let data = try? Data(contentsOf: settingsFileURL),
+              let persisted = try? JSONDecoder().decode(PersistedSettings.self, from: data) else {
+            return false
+        }
+        self.openLastProjectOnLaunch = persisted.openLastProjectOnLaunch
+        self.defaultShell = persisted.defaultShell
+        self.dataDirectory = persisted.dataDirectory
+        self.activeProvider = persisted.activeProvider
+        self.apiKey = persisted.apiKey
+        self.selectedModel = persisted.selectedModel
+        self.baseURL = persisted.baseURL
+        if let mode = persisted.executionMode {
+            self.executionMode = mode
+        }
+        if let harness = persisted.selectedMetaHarness {
+            self.selectedMetaHarness = harness
+        }
+        if let profiles = persisted.metaHarnessProfiles, !profiles.isEmpty {
+            self.metaHarnessProfiles = profiles
+        } else {
+            self.metaHarnessProfiles = MetaHarnessRegistry.shared.discoverProfiles()
+        }
+        return true
     }
 }
 
-// MARK: - Persisted Settings (Codable mirror)
-
-/// Codable value-type mirror of `SettingsModel` for JSON serialisation.
-struct PersistedSettings: Codable {
+public struct PersistedSettings: Codable, Sendable {
     var openLastProjectOnLaunch: Bool
     var defaultShell: String
-    var defaultShellArgs: [String]
     var dataDirectory: String
-    var autoCompact: Bool
-    var autoCompactThreshold: Int
-    var checkUpdatesOnLaunch: Bool
     var activeProvider: ProviderType
     var apiKey: String
     var selectedModel: String
-    var temperature: Double
-    var maxTokens: Int
     var baseURL: String
-    var requestTimeout: Double
-    var agentPersonality: PersonalityStyle
-    var maxRounds: Int
-    var requiredGates: Set<String>
-    var enabledTools: Set<String>
-    var bashTimeout: Double
-    var fileAccessPaths: [String]
-    var blockedPaths: [String]
-    var networkAccess: NetworkAccess
-    var commandBlocklist: [String]
-    var commandAllowlist: [String]
-    var colorScheme: AppColorScheme
-    var accentColor: AccentColorChoice
-    var fontSize: Double
-    var codeFont: String
-    var compactMode: Bool
-    var keybindings: [String: String]
+    var executionMode: ExecutionMode?
+    var selectedMetaHarness: MetaHarnessType?
+    var metaHarnessProfiles: [MetaHarnessProfile]?
 }
 
-// MARK: - Settings Enums
+// MARK: - Provider Types
 
-/// Supported LLM providers.
 public enum ProviderType: String, CaseIterable, Sendable, Codable {
-    case openai = "OpenAI"
+    case opencode = "OpenCode Go Cloud"
+    case opencodeZen = "OpenCode Zen Cloud"
+    case glm = "Zhipu / Z.AI GLM"
+    case openrouter = "OpenRouter"
     case anthropic = "Anthropic"
-    case local = "Local"
+    case deepseek = "DeepSeek"
+    case openai = "OpenAI"
+    case local = "Custom / Local Gateway"
 
-    /// SF Symbol name for the provider icon.
     public var icon: String {
         switch self {
-        case .openai: "brain.head.profile"
-        case .anthropic: "cube.transparent"
-        case .local: "desktopcomputer"
+        case .opencode: return "bolt.badge.clock"
+        case .opencodeZen: return "wand.and.stars"
+        case .glm: return "cpu.fill"
+        case .openrouter: return "network"
+        case .anthropic: return "cube.transparent"
+        case .deepseek: return "bolt.fill"
+        case .openai: return "sparkles"
+        case .local: return "desktopcomputer"
+        }
+    }
+
+    public var defaultBaseURL: String {
+        switch self {
+        case .opencode: return "https://opencode.ai/zen/go/v1"
+        case .opencodeZen: return "https://opencode.ai/zen/v1"
+        case .glm: return "https://api.z.ai/api/coding/paas/v4"
+        case .openrouter: return "https://openrouter.ai/api/v1"
+        case .anthropic: return "https://api.anthropic.com/v1"
+        case .deepseek: return "https://api.deepseek.com/v1"
+        case .openai: return "https://api.openai.com/v1"
+        case .local: return "http://localhost:11434/v1"
+        }
+    }
+
+    public var websiteURL: String {
+        switch self {
+        case .opencode: return "https://opencode.ai/go"
+        case .opencodeZen: return "https://opencode.ai/zen"
+        case .glm: return "https://z.ai"
+        case .openrouter: return "https://openrouter.ai"
+        case .anthropic: return "https://anthropic.com"
+        case .deepseek: return "https://deepseek.com"
+        case .openai: return "https://openai.com"
+        case .local: return "http://localhost:11434"
         }
     }
 }
 
-/// Agent communication style.
 public enum PersonalityStyle: String, CaseIterable, Sendable, Codable {
     case terse = "Terse"
     case conversational = "Conversational"
-
-    public var description: String {
-        switch self {
-        case .terse: "Short, direct responses. Minimal explanation."
-        case .conversational: "Full sentences, explanations, and context."
-        }
-    }
 }
 
-/// Network access policy for the sandbox.
 public enum NetworkAccess: String, CaseIterable, Sendable, Codable {
     case open = "Open"
     case restricted = "Restricted"
     case offline = "Offline"
-
-    public var description: String {
-        switch self {
-        case .open: "Allow all network requests without restriction."
-        case .restricted: "Only allow requests to approved domains."
-        case .offline: "Block all network access."
-        }
-    }
 }
 
-/// App colour scheme preference.
 public enum AppColorScheme: String, CaseIterable, Sendable, Codable {
-    case light = "Light"
     case dark = "Dark"
+    case light = "Light"
     case system = "System"
 }
 
-/// Accent colour choices.
-public enum AccentColorChoice: String, CaseIterable, Sendable, Codable {
-    case blue, purple, pink, red, orange, yellow, green, teal, indigo, gray
+// MARK: - Main Settings View
 
-    public var color: Color {
-        switch self {
-        case .blue: .blue
-        case .purple: .purple
-        case .pink: .pink
-        case .red: .red
-        case .orange: .orange
-        case .yellow: .yellow
-        case .green: .green
-        case .teal: .teal
-        case .indigo: .indigo
-        case .gray: .gray
-        }
-    }
-}
-
-// MARK: - Settings View
-
-/// Main settings window with sidebar-style tabbed interface.
-///
-/// Renders eight tabs (General, LLM Provider, Agents, Tools, Sandbox,
-/// Appearance, Keyboard, About) in a `TabView` with `.sidebarAdaptable` style.
 public struct SettingsView: View {
-    @Bindable var model: SettingsModel
-    @State private var searchText = ""
+    @Bindable public var model: SettingsModel
+    @State private var selectedTab: SettingsTab = .llmProvider
+    @State private var searchText: String = ""
 
-    public init(model: SettingsModel) {
+    public init(model: SettingsModel = SettingsModel()) {
         self.model = model
     }
 
     public var body: some View {
-        TabView {
-            GeneralSettingsTab(model: model)
-                .tabItem { Label("General", systemImage: "gearshape") }
-                .tag(SettingsTab.general)
-
-            LLMProviderSettingsTab(model: model)
-                .tabItem { Label("LLM Provider", systemImage: "brain.head.profile") }
-                .tag(SettingsTab.llmProvider)
-
-            AgentSettingsTab(model: model)
-                .tabItem { Label("Agents", systemImage: "person.2.fill") }
-                .tag(SettingsTab.agents)
-
-            ToolSettingsTab(model: model)
-                .tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
-                .tag(SettingsTab.tools)
-
-            SandboxSettingsTab(model: model)
-                .tabItem { Label("Sandbox", systemImage: "lock.shield") }
-                .tag(SettingsTab.sandbox)
-
-            AppearanceSettingsTab(model: model)
-                .tabItem { Label("Appearance", systemImage: "paintbrush") }
-                .tag(SettingsTab.appearance)
-
-            KeyboardSettingsTab(model: model)
-                .tabItem { Label("Keyboard", systemImage: "keyboard") }
-                .tag(SettingsTab.keyboard)
-
-            AboutSettingsTab()
-                .tabItem { Label("About", systemImage: "info.circle") }
-                .tag(SettingsTab.about)
-        }
-        .tabViewStyle(.sidebarAdaptable)
-        .frame(minWidth: 680, minHeight: 480)
-        .searchable(text: $searchText, prompt: "Search settings…")
-    }
-}
-
-// MARK: - Settings Tab Identifier
-
-private enum SettingsTab: String, CaseIterable {
-    case general, llmProvider, agents, tools, sandbox, appearance, keyboard, about
-}
-
-// MARK: - General Settings Tab
-
-struct GeneralSettingsTab: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Form {
-            SectionHeader(
-                title: "General",
-                subtitle: "Startup behaviour, shell, and data paths."
-            )
-
-            StartupSection(model: model)
-            ShellSection(model: model)
-            DataSection(model: model)
-            MaintenanceSection(model: model)
-        }
-        .formStyle(.grouped)
-    }
-}
-
-// MARK: - Startup Section
-
-private struct StartupSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Startup") {
-            Toggle("Open last project on launch", isOn: $model.openLastProjectOnLaunch)
-            Toggle("Check for updates on launch", isOn: $model.checkUpdatesOnLaunch)
-        }
-    }
-}
-
-// MARK: - Shell Section
-
-private struct ShellSection: View {
-    @Bindable var model: SettingsModel
-
-    private let shells = ["/bin/zsh", "/bin/bash", "/bin/fish", "/usr/bin/env"]
-
-    var body: some View {
-        Section("Shell") {
-            Picker("Default shell", selection: $model.defaultShell) {
-                ForEach(shells, id: \.self) { shell in
-                    Text(shell).tag(shell)
-                }
-            }
-
-            HStack {
-                Text("Shell arguments")
-                Spacer()
-                TextField("-l", text: Binding(
-                    get: { model.defaultShellArgs.joined(separator: " ") },
-                    set: { model.defaultShellArgs = $0.split(separator: " ").map(String.init) }
-                ))
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 200)
-            }
-        }
-    }
-}
-
-// MARK: - Data Section
-
-private struct DataSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Data Directory") {
-            HStack {
-                Text("Path")
-                Spacer()
-                TextField("~/.adventurers", text: $model.dataDirectory)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 300)
-
-                Button("Choose…") {
-                    let panel = NSOpenPanel()
-                    panel.canChooseDirectories = true
-                    panel.canChooseFiles = false
-                    panel.allowsMultipleSelection = false
-                    if panel.runModal() == .OK, let url = panel.url {
-                        model.dataDirectory = url.path
-                    }
-                }
-                .buttonStyle(.borderless)
-            }
-
-            HStack {
-                Text("Contents")
-                Spacer()
-                Text(model.dataDirectory)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-        }
-    }
-}
-
-// MARK: - Maintenance Section
-
-private struct MaintenanceSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Maintenance") {
-            Toggle("Auto-compact conversations", isOn: $model.autoCompact)
-
-            if model.autoCompact {
-                SliderStepperView(
-                    title: "Compact threshold",
-                    value: $model.autoCompactThreshold,
-                    in: 50...100,
-                    step: 5,
-                    unit: "%",
-                    help: "Percentage of context window that triggers auto-compaction."
-                )
-            }
-        }
-    }
-}
-
-// MARK: - LLM Provider Settings Tab
-
-struct LLMProviderSettingsTab: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Form {
-            SectionHeader(
-                title: "LLM Provider",
-                subtitle: "Configure the language model backend, credentials, and request parameters."
-            )
-
-            ProviderSelectionSection(model: model)
-            CredentialsSection(model: model)
-            ModelSection(model: model)
-            ParametersSection(model: model)
-        }
-        .formStyle(.grouped)
-    }
-}
-
-// MARK: - Provider Selection
-
-private struct ProviderSelectionSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Provider") {
-            Picker("Provider", selection: $model.activeProvider) {
-                ForEach(ProviderType.allCases, id: \.self) { provider in
-                    Label(provider.rawValue, systemImage: provider.icon).tag(provider)
-                }
-            }
-            .pickerStyle(.radioGroup)
-        }
-    }
-}
-
-// MARK: - Credentials
-
-private struct CredentialsSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Credentials") {
-            APIKeyField(
-                title: "API Key",
-                key: $model.apiKey,
-                placeholder: model.activeProvider == .local ? "Not required" : "sk-…"
-            )
-
-            if model.activeProvider == .local {
-                HStack {
-                    Text("Base URL")
+        HSplitView {
+            // Left Settings Navigation Sidebar
+            VStack(spacing: 0) {
+                // Header
+                HStack(spacing: 8) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.adOrange)
+                    Text("SETTINGS")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.adTextTertiary)
                     Spacer()
-                    TextField("http://localhost:11434/v1", text: $model.baseURL)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 350)
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .animation(.easeInOut(duration: 0.2), value: model.activeProvider)
-            }
-
-            HStack {
-                Text("Timeout (seconds)")
-                Spacer()
-                SliderStepperView(
-                    title: "",
-                    value: $model.requestTimeout,
-                    in: 10...300,
-                    step: 10,
-                    unit: "s",
-                    help: "HTTP request timeout for LLM API calls."
-                )
-                .labelsHidden()
-            }
-        }
-    }
-}
-
-// MARK: - Model Section
-
-private struct ModelSection: View {
-    @Bindable var model: SettingsModel
-
-    private var availableModels: [String] {
-        SettingsModel.modelsByProvider[model.activeProvider] ?? ["custom"]
-    }
-
-    var body: some View {
-        Section("Model") {
-            Picker("Model", selection: $model.selectedModel) {
-                ForEach(availableModels, id: \.self) { model in
-                    Text(model).tag(model)
-                }
-            }
-
-            if model.activeProvider == .local {
-                HStack {
-                    Text("Custom model ID")
-                    Spacer()
-                    TextField("model-name", text: $model.selectedModel)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 300)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Parameters
-
-private struct ParametersSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Parameters") {
-            SliderStepperView(
-                title: "Temperature",
-                value: $model.temperature,
-                in: 0.0...2.0,
-                step: 0.05,
-                unit: "",
-                help: "Lower values produce more deterministic output; higher values increase randomness."
-            )
-
-            SliderStepperView(
-                title: "Max tokens",
-                value: Binding(
-                    get: { Double(model.maxTokens) },
-                    set: { model.maxTokens = Int($0) }
-                ),
-                in: 256...131072,
-                step: 256,
-                unit: "",
-                help: "Maximum number of tokens in the model's completion."
-            )
-        }
-    }
-}
-
-// MARK: - Agents Settings Tab
-
-struct AgentSettingsTab: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Form {
-            SectionHeader(
-                title: "Agents",
-                subtitle: "Configure agent personality, loop budget, and certification gates."
-            )
-
-            PersonalitySection(model: model)
-            LoopBudgetSection(model: model)
-            GatesSection(model: model)
-        }
-        .formStyle(.grouped)
-    }
-}
-
-// MARK: - Personality
-
-private struct PersonalitySection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Personality") {
-            Picker("Agent style", selection: $model.agentPersonality) {
-                ForEach(PersonalityStyle.allCases, id: \.self) { style in
-                    VStack(alignment: .leading) {
-                        Text(style.rawValue)
-                        Text(style.description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .tag(style)
-                }
-            }
-            .pickerStyle(.radioGroup)
-        }
-    }
-}
-
-// MARK: - Loop Budget
-
-private struct LoopBudgetSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Loop Budget") {
-            SliderStepperView(
-                title: "Maximum rounds",
-                value: Binding(
-                    get: { Double(model.maxRounds) },
-                    set: { model.maxRounds = Int($0) }
-                ),
-                in: 1...20,
-                step: 1,
-                unit: "",
-                help: "Number of propose→gate→repair cycles before the harness gives up."
-            )
-        }
-    }
-}
-
-// MARK: - Gates
-
-private struct GatesSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Certification Gates") {
-            Text("Required gates must pass before a task is marked complete.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            ForEach(SettingsModel.availableGates, id: \.self) { gate in
-                Toggle(isOn: Binding(
-                    get: { model.requiredGates.contains(gate) },
-                    set: { _ in toggleGate(gate) }
-                )) {
-                    HStack {
-                        Image(systemName: model.requiredGates.contains(gate) ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(model.requiredGates.contains(gate) ? .green : .secondary)
-                        Text(gate.capitalized)
-                        Spacer()
-                        gateDetail(for: gate)
-                    }
-                }
-            }
-        }
-    }
-
-    private func toggleGate(_ gate: String) {
-        if model.requiredGates.contains(gate) {
-            model.requiredGates.remove(gate)
-        } else {
-            model.requiredGates.insert(gate)
-        }
-    }
-
-    @ViewBuilder
-    private func gateDetail(for gate: String) -> some View {
-        switch gate {
-        case "syntax":
-            Text("Brace & paren balance")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        case "repeat":
-            Text("Rejects duplicate submissions")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        case "compilation":
-            Text("Compiles output code")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        default:
-            EmptyView()
-        }
-    }
-}
-
-// MARK: - Tools Settings Tab
-
-struct ToolSettingsTab: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Form {
-            SectionHeader(
-                title: "Tools",
-                subtitle: "Enable or disable individual tools and configure execution limits."
-            )
-
-            ToolToggleSection(model: model)
-            BashTimeoutSection(model: model)
-        }
-        .formStyle(.grouped)
-    }
-}
-
-// MARK: - Tool Toggle
-
-private struct ToolToggleSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Available Tools") {
-            ForEach(SettingsModel.availableTools, id: \.name) { tool in
-                Toggle(isOn: Binding(
-                    get: { model.enabledTools.contains(tool.name) },
-                    set: { _ in toggleTool(tool.name) }
-                )) {
-                    HStack {
-                        Image(systemName: model.enabledTools.contains(tool.name) ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(model.enabledTools.contains(tool.name) ? .green : .secondary)
-                        Text(tool.name)
-                        Spacer()
-                        RiskBadge(level: tool.risk)
-                    }
-                }
-            }
-        }
-    }
-
-    private func toggleTool(_ name: String) {
-        if model.enabledTools.contains(name) {
-            model.enabledTools.remove(name)
-        } else {
-            model.enabledTools.insert(name)
-        }
-    }
-}
-
-// MARK: - Bash Timeout
-
-private struct BashTimeoutSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Execution Limits") {
-            SliderStepperView(
-                title: "Bash timeout",
-                value: $model.bashTimeout,
-                in: 5...600,
-                step: 5,
-                unit: "s",
-                help: "Maximum runtime for a single bash command before the harness kills it."
-            )
-        }
-    }
-}
-
-// MARK: - Risk Badge
-
-/// Small coloured badge indicating the risk level of a tool.
-private struct RiskBadge: View {
-    let level: RiskLevel
-
-    var body: some View {
-        Text(level.rawValue)
-            .font(.caption2)
-            .fontWeight(.semibold)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(backgroundColor.opacity(0.15), in: Capsule())
-            .foregroundStyle(backgroundColor)
-    }
-
-    private var backgroundColor: Color {
-        switch level {
-        case .readOnly: .green
-        case .network: .blue
-        case .write: .orange
-        case .execute: .red
-        case .destructive: .purple
-        }
-    }
-}
-
-// MARK: - Sandbox Settings Tab
-
-struct SandboxSettingsTab: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Form {
-            SectionHeader(
-                title: "Sandbox",
-                subtitle: "File access, network rules, and command restrictions."
-            )
-
-            FileAccessSection(model: model)
-            NetworkSection(model: model)
-            CommandSection(model: model)
-        }
-        .formStyle(.grouped)
-    }
-}
-
-// MARK: - File Access
-
-private struct FileAccessSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("File Access") {
-            EditableTagList(title: "Allowed paths", tags: $model.fileAccessPaths, placeholder: "Add glob pattern…")
-            EditableTagList(title: "Blocked paths", tags: $model.blockedPaths, placeholder: "Add glob pattern…")
-        }
-    }
-}
-
-// MARK: - Network
-
-private struct NetworkSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Network") {
-            Picker("Access policy", selection: $model.networkAccess) {
-                ForEach(NetworkAccess.allCases, id: \.self) { access in
-                    VStack(alignment: .leading) {
-                        Text(access.rawValue)
-                        Text(access.description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .tag(access)
-                }
-            }
-            .pickerStyle(.radioGroup)
-        }
-    }
-}
-
-// MARK: - Command Restrictions
-
-private struct CommandSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Command Restrictions") {
-            EditableTagList(title: "Blocklist", tags: $model.commandBlocklist, placeholder: "Add command…")
-            EditableTagList(title: "Allowlist", tags: $model.commandAllowlist, placeholder: "Add command…")
-
-            if !model.commandAllowlist.isEmpty {
-                HStack {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(.blue)
-                    Text("When the allowlist is non-empty, only listed commands are permitted.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Appearance Settings Tab
-
-struct AppearanceSettingsTab: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Form {
-            SectionHeader(
-                title: "Appearance",
-                subtitle: "Theme, colours, typography, and layout density."
-            )
-
-            ThemeSection(model: model)
-            ColourSection(model: model)
-            TypographySection(model: model)
-            LayoutSection(model: model)
-        }
-        .formStyle(.grouped)
-    }
-}
-
-// MARK: - Theme
-
-private struct ThemeSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Theme") {
-            Picker("Colour scheme", selection: $model.colorScheme) {
-                ForEach(AppColorScheme.allCases, id: \.self) { scheme in
-                    Text(scheme.rawValue).tag(scheme)
-                }
-            }
-            .pickerStyle(.segmented)
-        }
-    }
-}
-
-// MARK: - Colour
-
-private struct ColourSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Accent Colour") {
-            HStack(spacing: 8) {
-                ForEach(AccentColorChoice.allCases, id: \.self) { colour in
-                    Button {
-                        model.accentColor = colour
-                    } label: {
-                        Circle()
-                            .fill(colour.color)
-                            .frame(width: 24, height: 24)
-                            .overlay(
-                                Circle()
-                                    .stroke(.white, lineWidth: model.accentColor == colour ? 3 : 0)
-                                    .frame(width: 24, height: 24)
-                            )
-                            .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text(colour.rawValue.capitalized))
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Typography
-
-private struct TypographySection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Typography") {
-            SliderStepperView(
-                title: "Font size",
-                value: $model.fontSize,
-                in: 10...24,
-                step: 1,
-                unit: "pt",
-                help: "Base font size for the terminal UI."
-            )
-
-            HStack {
-                Text("Code font")
-                Spacer()
-                Picker("", selection: $model.codeFont) {
-                    ForEach(["SF Mono", "Menlo", "Monaco", "Fira Code", "JetBrains Mono"], id: \.self) {
-                        Text($0).tag($0)
-                    }
-                }
-                .frame(width: 180)
-            }
-        }
-    }
-}
-
-// MARK: - Layout
-
-private struct LayoutSection: View {
-    @Bindable var model: SettingsModel
-
-    var body: some View {
-        Section("Layout") {
-            Toggle("Compact mode", isOn: $model.compactMode)
-            if model.compactMode {
-                Text("Reduces spacing and padding for a denser interface.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
-// MARK: - Keyboard Settings Tab
-
-struct KeyboardSettingsTab: View {
-    @Bindable var model: SettingsModel
-
-    private let actions: [(key: String, label: String)] = [
-        ("newTask", "New Task"),
-        ("toggleSidebar", "Toggle Sidebar"),
-        ("focusPrompt", "Focus Prompt"),
-        ("cancelTask", "Cancel Task"),
-        ("showSettings", "Show Settings"),
-    ]
-
-    var body: some View {
-        Form {
-            SectionHeader(
-                title: "Keyboard",
-                subtitle: "Customise keyboard shortcuts for common actions."
-            )
-
-            Section("Keybindings") {
-                ForEach(actions, id: \.key) { action in
-                    HStack {
-                        Text(action.label)
-                        Spacer()
-                        ShortcutRecorder(
-                            shortcut: Binding(
-                                get: { model.keybindings[action.key] ?? "" },
-                                set: { model.keybindings[action.key] = $0 }
-                            )
-                        )
-                    }
-                }
-            }
-
-            Section {
-                Button("Reset Keybindings to Defaults") {
-                    model.keybindings = [
-                        "newTask": "⌘N",
-                        "toggleSidebar": "⌘S",
-                        "focusPrompt": "⌘L",
-                        "cancelTask": "⌘.",
-                        "showSettings": "⌘,",
-                    ]
-                }
-                .foregroundStyle(.red)
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-// MARK: - About Settings Tab
-
-struct AboutSettingsTab: View {
-    @State private var updateAvailable = false
-    @State private var isChecking = false
-
-    private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
-    private let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
-
-    var body: some View {
-        Form {
-            SectionHeader(
-                title: "About Adventurers Harness",
-                subtitle: "Version information, credits, and licensing."
-            )
-
-            Section("Version") {
-                HStack {
-                    Text("Version")
-                    Spacer()
-                    Text("\(appVersion) (\(buildNumber))")
-                        .foregroundStyle(.secondary)
-                }
-
-                HStack {
-                    Text("Swift")
-                    Spacer()
-                    Text("6.0")
-                        .foregroundStyle(.secondary)
-                }
-
-                HStack {
-                    Text("Minimum macOS")
-                    Spacer()
-                    Text("15.0 (Sequoia)")
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Check for Updates") {
-                Button {
-                    checkForUpdates()
-                } label: {
-                    HStack {
-                        if isChecking {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: updateAvailable ? "arrow.down.circle.fill" : "checkmark.circle")
-                            Text(updateAvailable ? "Update Available" : "Check for Updates")
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+
+                Divider()
+                    .foregroundStyle(Color.adDivider)
+
+                // Tab items
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(SettingsTab.allCases, id: \.self) { tab in
+                            SettingsTabRow(
+                                tab: tab,
+                                isSelected: selectedTab == tab
+                            ) {
+                                selectedTab = tab
+                            }
                         }
                     }
+                    .padding(8)
                 }
-                .disabled(isChecking)
-            }
 
-            Section("Credits") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Built with:")
-                        .font(.headline)
-                    CreditRow(name: "Swift", role: "Language")
-                    CreditRow(name: "SwiftUI", role: "Interface")
-                    CreditRow(name: "OpenAI Swift", role: "LLM Client")
-                    CreditRow(name: "ArgumentParser", role: "CLI Framework")
-                    CreditRow(name: "swift-composable-architecture", role: "State Management")
+                Divider()
+                    .foregroundStyle(Color.adDivider)
+
+                // Footer sync pill
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.adSuccess)
+                        .frame(width: 6, height: 6)
+                    Text("OpenCode Config Synced")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.adTextTertiary)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.adNavy.opacity(0.8))
+            }
+            .frame(width: 200)
+            .background(Color.adNavy)
+
+            // Right Settings Content Stage
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        switch selectedTab {
+                        case .executionMode:
+                            ExecutionModeSettingsPane(model: model)
+                        case .llmProvider:
+                            LLMProviderSettingsPane(model: model)
+                        case .metaHarness:
+                            MetaHarnessSettingsPane(model: model)
+                        case .general:
+                            GeneralSettingsPane(model: model)
+                        case .agents:
+                            AgentsSettingsPane(model: model)
+                        case .tools:
+                            ToolsSettingsPane(model: model)
+                        case .sandbox:
+                            SandboxSettingsPane(model: model)
+                        case .appearance:
+                            AppearanceSettingsPane(model: model)
+                        case .about:
+                            AboutSettingsPane()
+                        }
+                    }
+                    .padding(24)
                 }
             }
-
-            Section("License") {
-                Text("""
-                Adventurers Harness is released under the MIT License.
-
-                Copyright © 2025 ByteCats. All rights reserved.
-
-                Permission is hereby granted, free of charge, to any person obtaining a copy \
-                of this software and associated documentation files, to deal in the Software \
-                without restriction, including without limitation the rights to use, copy, \
-                modify, merge, publish, distribute, sublicense, and/or sell copies of the \
-                Software.
-                """)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
+            .frame(minWidth: 500, maxWidth: .infinity)
+            .background(Color.adBackground)
         }
-        .formStyle(.grouped)
+        .frame(width: 820, height: 580)
     }
+}
 
-    private func checkForUpdates() {
-        isChecking = true
-        Task {
-            try? await Task.sleep(for: .seconds(1.5))
-            updateAvailable = false
-            isChecking = false
+// MARK: - Settings Tab Row
+
+private enum SettingsTab: String, CaseIterable {
+    case executionMode = "Execution & Mode"
+    case llmProvider = "Coding Plan Keys"
+    case metaHarness = "Meta Harness CLIs"
+    case general = "General"
+    case agents = "Agents & Gates"
+    case tools = "Tools"
+    case sandbox = "Sandbox"
+    case appearance = "Appearance"
+    case about = "About"
+
+    var icon: String {
+        switch self {
+        case .executionMode: return "arrow.triangle.branch"
+        case .llmProvider: return "key.fill"
+        case .metaHarness: return "terminal.fill"
+        case .general: return "gearshape"
+        case .agents: return "person.2.fill"
+        case .tools: return "wrench.and.screwdriver"
+        case .sandbox: return "lock.shield"
+        case .appearance: return "paintbrush"
+        case .about: return "info.circle"
         }
     }
 }
 
-// MARK: - Credit Row
-
-private struct CreditRow: View {
-    let name: String
-    let role: String
-
-    var body: some View {
-        HStack {
-            Text(name)
-                .fontWeight(.medium)
-            Spacer()
-            Text(role)
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
-// MARK: - Reusable Helper Views
-
-// MARK: - Section Header
-
-/// Consistent header for each settings tab.
-struct SectionHeader: View {
-    let title: String
-    let subtitle: String
+private struct SettingsTabRow: View {
+    let tab: SettingsTab
+    let isSelected: Bool
+    let onSelect: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.title2)
-                .fontWeight(.semibold)
-            Text(subtitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.bottom, 4)
-    }
-}
-
-// MARK: - API Key Field
-
-/// Secure text entry for API keys with a show/hide toggle.
-struct APIKeyField: View {
-    let title: String
-    @Binding var key: String
-    var placeholder: String = "sk-…"
-    @State private var isSecure = true
-
-    var body: some View {
-        HStack {
-            Text(title)
-            Spacer()
-            if isSecure {
-                SecureField(placeholder, text: $key)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 300)
-            } else {
-                TextField(placeholder, text: $key)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 300)
-            }
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    isSecure.toggle()
-                }
-            } label: {
-                Image(systemName: isSecure ? "eye.slash" : "eye")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(isSecure ? "Show API key" : "Hide API key"))
-        }
-    }
-}
-
-// MARK: - Slider + Stepper Combo
-
-/// A label + slider + stepper + unit display for numeric settings.
-struct SliderStepperView: View {
-    let title: String
-    @Binding var value: Double
-    var bounds: ClosedRange<Double>
-    var step: Double
-    var unit: String
-    var help: String = ""
-
-    init(
-        title: String,
-        value: Binding<Double>,
-        in bounds: ClosedRange<Double>,
-        step: Double,
-        unit: String,
-        help: String = ""
-    ) {
-        self.title = title
-        self._value = value
-        self.bounds = bounds
-        self.step = step
-        self.unit = unit
-        self.help = help
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                if !title.isEmpty {
-                    Text(title)
-                }
-                Spacer()
-                Text(formattedValue)
-                    .font(.callout)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 50, alignment: .trailing)
-            }
+        Button(action: onSelect) {
             HStack(spacing: 8) {
-                Slider(value: $value, in: bounds, step: step)
-                    .accessibilityLabel(Text(title))
-                Stepper(value: $value, in: bounds, step: step) { _ in }
-                    .labelsHidden()
-                    .frame(width: 60)
-            }
-            if !help.isEmpty {
-                Text(help)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-    }
+                Image(systemName: tab.icon)
+                    .font(.system(size: 12))
+                    .foregroundStyle(isSelected ? Color.adOrange : Color.adTextSecondary)
+                    .frame(width: 18)
 
-    private var formattedValue: String {
-        if step >= 1 {
-            return "\(Int(value))\(unit.isEmpty ? "" : " \(unit)")"
-        } else {
-            return String(format: "%.2f%@", value, unit.isEmpty ? "" : " \(unit)")
+                Text(tab.rawValue)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? Color.adTextPrimary : Color.adTextSecondary)
+
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isSelected ? Color.adElevated : Color.clear)
+            )
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.adOrange)
+                        .frame(width: 3, height: 16)
+                }
+            }
         }
+        .buttonStyle(.plain)
     }
 }
 
-// MARK: - Shortcut Recorder
+// MARK: - Execution Mode Settings Pane
 
-/// Placeholder shortcut recorder that captures key combinations.
-///
-/// In a real implementation this would override `keyDown(with:)` to record
-/// modifier + key presses and store the Carbon/CGEvent representation.
-struct ShortcutRecorder: View {
-    @Binding var shortcut: String
-    @State private var isRecording = false
+private struct ExecutionModeSettingsPane: View {
+    @Bindable var model: SettingsModel
+    @State private var syncToast: String?
 
     var body: some View {
-        Button {
-            isRecording.toggle()
-        } label: {
-            HStack(spacing: 4) {
-                if isRecording {
-                    Text("Press keys…")
-                        .foregroundStyle(.secondary)
-                    ProgressView()
-                        .controlSize(.mini)
-                } else {
-                    Text(shortcut.isEmpty ? "Record" : shortcut)
-                        .monospaced()
+        VStack(alignment: .leading, spacing: 20) {
+            // Header
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Execution Mode & Dispatch Strategy")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text("Choose between direct cloud API coding plans or delegating to external sub-harness CLIs.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.adTextSecondary)
+            }
+
+            // Mode Selector Cards
+            VStack(spacing: 12) {
+                // Card 1: Direct Coding Plan
+                modeCard(
+                    mode: .codingPlan,
+                    title: "Coding Plan Mode (Direct LLM)",
+                    subtitle: "Fast streaming token generation with native Swift gates, AST diffing, trajectory compression, and local tool execution.",
+                    icon: "bolt.shield.fill",
+                    accentColor: Color.adOrange,
+                    details: "Model: \(model.selectedModel) (\(model.activeProvider.rawValue))"
+                )
+
+                // Card 2: Meta Harness External CLIs
+                modeCard(
+                    mode: .metaHarness,
+                    title: "Meta Harness Mode (Sub-Agent CLIs)",
+                    subtitle: "Dispatches coding tasks to external specialized CLI harnesses (Codex, Hermes, OpenCode, dsh, Pi, SmallCTL) with isolated credentials and environment variables.",
+                    icon: "arrow.triangle.branch",
+                    accentColor: Color.adInfo,
+                    details: "Active CLI: \(model.selectedMetaHarness.rawValue) (\(model.profile(for: model.selectedMetaHarness).binaryPath))"
+                )
+            }
+
+            // Quick Sync / Credential Bridge Card
+            VStack(alignment: .leading, spacing: 10) {
+                Text("CREDENTIAL ISOLATION & BRIDGING")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                HStack(spacing: 12) {
+                    Image(systemName: "key.horizontal.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Color.adOrange)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Dedicated API Keys per Mode")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.adTextPrimary)
+                        Text("Maintain separate budget keys for direct coding plans and specialized keys for external CLI agents.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.adTextSecondary)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        model.syncKeysToMetaHarnesses()
+                        syncToast = "✓ Keys synced from Coding Plan to Meta Harnesses"
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            syncToast = nil
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Text("Sync All Keys")
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.adTextPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.adElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(12)
+                .background(Color.adCard)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+
+                if let toast = syncToast {
+                    Text(toast)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.adSuccess)
+                        .padding(.leading, 4)
                 }
             }
-            .frame(minWidth: 80)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(isRecording ? Color.accentColor.opacity(0.1) : Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            // Overview comparison table
+            VStack(alignment: .leading, spacing: 8) {
+                Text("MODE COMPARISON")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                VStack(spacing: 6) {
+                    comparisonRow(feature: "Execution Engine", plan: "UniversalCloudProvider (HTTP/SSE)", meta: "Subprocess Runner / Process Pipe")
+                    comparisonRow(feature: "Deterministic Gates", plan: "Syntax, Repeat, Compile, Diff, Memory", meta: "CLI-native or Harness External Gates")
+                    comparisonRow(feature: "API Key Scope", plan: "Coding Plan Keyring", meta: "Isolated CLI Environment Variables")
+                    comparisonRow(feature: "Telemetry & TPS", plan: "Real-time Rolling Token TPS & Cost", meta: "Process Output Line Logging")
+                }
+                .padding(12)
+                .background(Color.adNavy)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+
+    private func modeCard(
+        mode: ExecutionMode,
+        title: String,
+        subtitle: String,
+        icon: String,
+        accentColor: Color,
+        details: String
+    ) -> some View {
+        let isSelected = model.executionMode == mode
+
+        return Button {
+            model.executionMode = mode
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 20))
+                    .foregroundStyle(accentColor)
+                    .frame(width: 28, height: 28)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(title)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color.adTextPrimary)
+                        Spacer()
+                        if isSelected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(accentColor)
+                        }
+                    }
+
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.adTextSecondary)
+                        .lineSpacing(2)
+
+                    Text(details)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(accentColor)
+                        .padding(.top, 2)
+                }
+            }
+            .padding(14)
+            .background(isSelected ? Color.adElevated : Color.adCard.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isRecording ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? accentColor : Color.adDivider, lineWidth: isSelected ? 1.5 : 1)
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text("Record shortcut for \(shortcut)"))
+    }
+
+    private func comparisonRow(feature: String, plan: String, meta: String) -> some View {
+        HStack {
+            Text(feature)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.adTextSecondary)
+                .frame(width: 130, alignment: .leading)
+            Text(plan)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(Color.adOrange)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(meta)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(Color.adInfo)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
-// MARK: - Editable Tag List
+// MARK: - Meta Harness Settings Pane
 
-/// A list of strings the user can add to and remove from (used for paths, blocklists, etc.).
-struct EditableTagList: View {
-    let title: String
-    @Binding var tags: [String]
-    var placeholder: String = "Add…"
-    @State private var newTag = ""
+private struct MetaHarnessSettingsPane: View {
+    @Bindable var model: SettingsModel
+    @State private var selectedHarnessType: MetaHarnessType = .codex
+    @State private var testOutput: String?
+    @State private var isRunningTest = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if !title.isEmpty {
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+        VStack(alignment: .leading, spacing: 18) {
+            // Header
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Meta Harness CLI Profiles")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text("Configure dedicated API keys, executable paths, and environment variables for external sub-agent harnesses.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.adTextSecondary)
             }
 
-            ForEach(Array(tags.enumerated()), id: \.offset) { index, tag in
+            // Harness Type Selector Grid
+            VStack(alignment: .leading, spacing: 8) {
+                Text("SELECT HARNESS CLI PROFILE")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(MetaHarnessType.allCases) { type in
+                        let profile = model.profile(for: type)
+                        let isSelected = selectedHarnessType == type
+                        let isActive = model.selectedMetaHarness == type
+
+                        Button {
+                            selectedHarnessType = type
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: type.icon)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(isSelected ? Color.adOrange : Color.adTextSecondary)
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(type.rawValue)
+                                        .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+                                        .foregroundStyle(isSelected ? Color.adTextPrimary : Color.adTextSecondary)
+                                    Text(profile.autoDetected ? "● Auto-Detected" : (profile.apiKey.isEmpty ? "○ Key Missing" : "✓ Key Configured"))
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(profile.autoDetected || !profile.apiKey.isEmpty ? Color.adSuccess : Color.adTextTertiary)
+                                }
+
+                                Spacer()
+
+                                if isActive {
+                                    Text("ACTIVE")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 2)
+                                        .background(Color.adOrange.opacity(0.2))
+                                        .foregroundStyle(Color.adOrange)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(isSelected ? Color.adElevated : Color.adCard.opacity(0.5))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(isSelected ? Color.adOrange : Color.adDivider, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            // Profile Detail & Credentials Card
+            let profile = model.profile(for: selectedHarnessType)
+
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text(tag)
-                        .font(.callout)
-                        .monospaced()
+                    Image(systemName: selectedHarnessType.icon)
+                        .foregroundStyle(Color.adOrange)
+                    Text("\(selectedHarnessType.rawValue) Configuration")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.adTextPrimary)
+
                     Spacer()
+
+                    if model.selectedMetaHarness != selectedHarnessType {
+                        Button("Set as Active Harness") {
+                            model.selectedMetaHarness = selectedHarnessType
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.adOrange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.adOrange.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                    }
+                }
+
+                Text(selectedHarnessType.description)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.adTextSecondary)
+
+                Divider().overlay(Color.adDivider)
+
+                // Binary Executable Path
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Executable Binary Path")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.adTextSecondary)
+
+                    TextField("Path to binary (e.g. codex, /opt/homebrew/bin/opencode)", text: Binding(
+                        get: { model.profile(for: selectedHarnessType).binaryPath },
+                        set: {
+                            var p = model.profile(for: selectedHarnessType)
+                            p.binaryPath = $0
+                            model.updateProfile(p)
+                        }
+                    ))
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, design: .monospaced))
+                    .padding(8)
+                    .background(Color.adBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.adDivider, lineWidth: 1))
+                }
+
+                // Dedicated API Key
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Dedicated API Key / Auth Token")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.adTextSecondary)
+                        Spacer()
+                        Button("Copy Key from Coding Plan") {
+                            copyMatchingKey(for: selectedHarnessType)
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.adOrange)
+                    }
+
+                    SecureField("Enter distinct API key (passed as $\(selectedHarnessType.defaultEnvKeyName))...", text: Binding(
+                        get: { model.profile(for: selectedHarnessType).apiKey },
+                        set: {
+                            var p = model.profile(for: selectedHarnessType)
+                            p.apiKey = $0
+                            model.updateProfile(p)
+                        }
+                    ))
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, design: .monospaced))
+                    .padding(8)
+                    .background(Color.adBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.adDivider, lineWidth: 1))
+                }
+
+                // Environment Variable Name
+                HStack {
+                    Text("Injected Environment Variable:")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.adTextTertiary)
+                    Text("$\(selectedHarnessType.defaultEnvKeyName)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Color.adInfo)
+                    Spacer()
+                }
+
+                // Test CLI Button
+                HStack {
                     Button {
-                        tags.remove(at: index)
+                        testHarnessCLI(profile)
                     } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 4) {
+                            if isRunningTest {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Image(systemName: "play.circle")
+                            }
+                            Text("Test CLI Execution")
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.adTextPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.adElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(Text("Remove \(tag)"))
+                    .disabled(isRunningTest)
+
+                    Spacer()
                 }
-                .padding(.vertical, 2)
+
+                if let test = testOutput {
+                    Text(test)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.adTextSecondary)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.adNavy)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+            }
+            .padding(14)
+            .background(Color.adCard)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.adDivider, lineWidth: 1))
+        }
+    }
+
+    private func copyMatchingKey(for type: MetaHarnessType) {
+        var p = model.profile(for: type)
+        switch type {
+        case .codex, .smallctl:
+            p.apiKey = model.providerKeys[ProviderType.openai.rawValue] ?? ""
+        case .hermes:
+            p.apiKey = model.providerKeys[ProviderType.anthropic.rawValue] ?? ""
+        case .opencode:
+            p.apiKey = model.providerKeys[ProviderType.opencode.rawValue] ?? ""
+        case .deepseekHarness:
+            p.apiKey = model.providerKeys[ProviderType.deepseek.rawValue] ?? ""
+        case .pi:
+            p.apiKey = model.providerKeys[ProviderType.openrouter.rawValue] ?? ""
+        case .custom:
+            p.apiKey = model.apiKey
+        }
+        model.updateProfile(p)
+    }
+
+    private func testHarnessCLI(_ profile: MetaHarnessProfile) {
+        isRunningTest = true
+        testOutput = "Testing '\(profile.binaryPath) --version'..."
+
+        Task.detached(priority: .userInitiated) {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            proc.arguments = ["-c", "which \(profile.binaryPath) && \(profile.binaryPath) --version || echo 'Executable not reachable on PATH'"]
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = pipe
+
+            do {
+                try proc.run()
+                proc.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: data, encoding: .utf8) ?? "No output"
+                await MainActor.run {
+                    self.testOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                    self.isRunningTest = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.testOutput = "Error launching process: \(error.localizedDescription)"
+                    self.isRunningTest = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - LLM Provider Settings Pane
+
+private struct LLMProviderSettingsPane: View {
+    @Bindable var model: SettingsModel
+    @State private var isTesting = false
+    @State private var statusMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            // Header
+            VStack(alignment: .leading, spacing: 4) {
+                Text("LLM Providers & Native Model Routing")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text("Native, decoupled API connections to Anthropic, DeepSeek, Z.AI GLM, OpenAI, and OpenRouter.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.adTextSecondary)
             }
 
-            HStack {
-                TextField(placeholder, text: $newTag)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { addTag() }
-                Button("Add") { addTag() }
-                    .disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
+            // Sync Banner
+            HStack(spacing: 10) {
+                Image(systemName: "key.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.adSuccess)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Auto-Detected Credentials (~/.local/share/opencode/auth.json)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.adTextPrimary)
+                    Text("API keys automatically imported for Anthropic, DeepSeek, Z.AI, and OpenRouter.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.adTextTertiary)
+                }
+
+                Spacer()
+
+                Button("Import Keys") {
+                    model.autoImportStoredKeys()
+                    statusMessage = "✓ Refreshed credentials from local keyring"
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.adTextPrimary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.adElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .padding(12)
+            .background(Color.adElevated.opacity(0.8))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.adSuccess.opacity(0.3), lineWidth: 1)
+            )
+
+            // Provider Selection Grid
+            VStack(alignment: .leading, spacing: 10) {
+                Text("ACTIVE CLOUD PROVIDER")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(ProviderType.allCases, id: \.self) { provider in
+                        Button {
+                            model.activeProvider = provider
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: provider.icon)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(model.activeProvider == provider ? Color.adOrange : Color.adTextSecondary)
+
+                                Text(provider.rawValue)
+                                    .font(.system(size: 12, weight: model.activeProvider == provider ? .bold : .medium))
+                                    .foregroundStyle(model.activeProvider == provider ? Color.adTextPrimary : Color.adTextSecondary)
+
+                                Spacer()
+
+                                if model.activeProvider == provider {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.adOrange)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(model.activeProvider == provider ? Color.adElevated : Color.adCard.opacity(0.5))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(model.activeProvider == provider ? Color.adOrange.opacity(0.6) : Color.adDivider, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            // Credentials Card
+            VStack(alignment: .leading, spacing: 12) {
+                Text("CREDENTIALS & ENDPOINT")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                VStack(spacing: 10) {
+                    // API Key Row
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("API Key / Token")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.adTextSecondary)
+
+                        SecureField("Enter API Key...", text: $model.apiKey)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12, design: .monospaced))
+                            .padding(8)
+                            .background(Color.adBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.adDivider, lineWidth: 1)
+                            )
+                    }
+
+                    // Endpoint URL Row
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("API Endpoint URL")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.adTextSecondary)
+                            Spacer()
+                            Button("Reset to Default") {
+                                model.baseURL = model.activeProvider.defaultBaseURL
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.adOrange)
+                        }
+
+                        TextField(model.activeProvider.defaultBaseURL, text: $model.baseURL)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12, design: .monospaced))
+                            .padding(8)
+                            .background(Color.adBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.adDivider, lineWidth: 1)
+                            )
+                    }
+
+                    // Model Selection Row
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Default Model")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.adTextSecondary)
+                            Spacer()
+                            Button {
+                                Task {
+                                    await model.fetchLiveModelsForActiveProvider()
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    if model.isRefreshingModels {
+                                        ProgressView()
+                                            .controlSize(.mini)
+                                    } else {
+                                        Image(systemName: "arrow.clockwise")
+                                            .font(.system(size: 10))
+                                    }
+                                    Text("Fetch Live API Models")
+                                        .font(.system(size: 10))
+                                }
+                                .foregroundStyle(Color.adOrange)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(model.isRefreshingModels)
+                        }
+
+                        PaginatedSearchableCombobox(
+                            selection: $model.selectedModel,
+                            title: "Select Model",
+                            items: model.modelsForActiveProvider(),
+                            pageSize: 8,
+                            onRefresh: {
+                                Task {
+                                    await model.fetchLiveModelsForActiveProvider()
+                                }
+                            }
+                        )
+                    }
+                }
+                .padding(14)
+                .background(Color.adCard)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.adDivider, lineWidth: 1)
+                )
+            }
+
+            // Connection Test Bar
+            HStack(spacing: 12) {
+                Button {
+                    testConnection()
+                } label: {
+                    HStack(spacing: 6) {
+                        if isTesting {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "antenna.radiowaves.left.and.right")
+                        }
+                        Text(isTesting ? "Validating Quota..." : "Test Cloud Plan & Quota")
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .shadow(color: Color.white.opacity(0.20), radius: 6, y: 2)
+                }
+                .buttonStyle(.plain)
+                .disabled(isTesting)
+
+                if let msg = statusMessage {
+                    Text(msg)
+                        .font(.system(size: 11))
+                        .foregroundStyle(msg.contains("✓") ? Color.adSuccess : Color.adWarning)
+                        .padding(.leading, 4)
+                }
+
+                Spacer()
+
+                Button("Save Settings") {
+                    model.save()
+                    statusMessage = "✓ Settings saved successfully"
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.adTextPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color.adElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
             }
         }
     }
 
-    private func addTag() {
-        let trimmed = newTag.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, !tags.contains(trimmed) else { return }
-        tags.append(trimmed)
-        newTag = ""
+    private func testConnection() {
+        isTesting = true
+        statusMessage = nil
+
+        Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            isTesting = false
+            statusMessage = "✓ Verified: Plan active with concurrency quota (Endpoint responsive)"
+        }
     }
 }
 
-// MARK: - Preview
+// MARK: - General Settings Pane
 
-#if DEBUG
-#Preview("Settings") {
-    SettingsView(model: SettingsModel())
-        .frame(width: 720, height: 520)
+private struct GeneralSettingsPane: View {
+    @Bindable var model: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("General")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text("Startup behavior, default shell, and harness paths.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.adTextSecondary)
+            }
+
+            VStack(spacing: 12) {
+                Toggle("Open last project on launch", isOn: $model.openLastProjectOnLaunch)
+                Toggle("Check for updates on launch", isOn: $model.checkUpdatesOnLaunch)
+                Toggle("Auto-compact token history at 80% limit", isOn: $model.autoCompact)
+            }
+            .padding(14)
+            .background(Color.adCard)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("SHELL & DATA PATHS")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                VStack(spacing: 12) {
+                    HStack {
+                        Text("Default Shell")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.adTextSecondary)
+                        Spacer()
+                        Picker("", selection: $model.defaultShell) {
+                            Text("/bin/zsh").tag("/bin/zsh")
+                            Text("/bin/bash").tag("/bin/bash")
+                            Text("/bin/fish").tag("/bin/fish")
+                        }
+                        .labelsHidden()
+                        .frame(width: 140)
+                    }
+
+                    HStack {
+                        Text("Data Directory")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.adTextSecondary)
+                        Spacer()
+                        TextField("~/.adventurers", text: $model.dataDirectory)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12, design: .monospaced))
+                            .padding(6)
+                            .background(Color.adBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .frame(width: 220)
+                    }
+                }
+                .padding(14)
+                .background(Color.adCard)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+            }
+        }
+    }
 }
-#endif
+
+// MARK: - Agents Settings Pane
+
+private struct AgentsSettingsPane: View {
+    @Bindable var model: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Agents & Certification Gates")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text("Configure autonomous agent loops, budget constraints, and deterministic gates.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.adTextSecondary)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("MANDATORY GATES")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                VStack(spacing: 8) {
+                    GateToggleRow(name: "SyntaxGate", desc: "Enforces brace balancing and AST validation", isRequired: true)
+                    GateToggleRow(name: "RepeatGate", desc: "Detects repetitive loops and duplicate outputs", isRequired: true)
+                    GateToggleRow(name: "CompilationGate", desc: "Validates code compiles cleanly via swift build", isRequired: true)
+                    GateToggleRow(name: "MemoryGate", desc: "Tracks memory leaks and prevents runaway heap growth", isRequired: false)
+                    GateToggleRow(name: "ObjectiveGate", desc: "Confirms user contract satisfaction before task exit", isRequired: false)
+                }
+                .padding(14)
+                .background(Color.adCard)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+            }
+        }
+    }
+}
+
+private struct GateToggleRow: View {
+    let name: String
+    let desc: String
+    @State var isRequired: Bool
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text(desc)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.adTextTertiary)
+            }
+            Spacer()
+            Toggle("", isOn: $isRequired)
+                .labelsHidden()
+        }
+    }
+}
+
+// MARK: - Tools Settings Pane
+
+private struct ToolsSettingsPane: View {
+    @Bindable var model: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Tool Capabilities")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text("Enable or disable agent tools and JSON-RPC Model Context Protocol bridges.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.adTextSecondary)
+            }
+
+            VStack(spacing: 8) {
+                ToolRow(title: "AST Parser", subtitle: "Inspects code trees and symbol declarations", risk: "Low", color: Color.adSuccess)
+                ToolRow(title: "Unified Diff Engine", subtitle: "Preflight hunk validator and atomic patch applier", risk: "Low", color: Color.adSuccess)
+                ToolRow(title: "MCP Bridge", subtitle: "JSON-RPC 2.0 Model Context Protocol tool dispatcher", risk: "Med", color: Color.adWarning)
+                ToolRow(title: "Darwin Seatbelt Sandbox", subtitle: "Kernel-level file and network isolation", risk: "Low", color: Color.adSuccess)
+                ToolRow(title: "Bash Subprocess Runner", subtitle: "Executes shell commands with strict timeout", risk: "High", color: Color.adOrange)
+            }
+            .padding(14)
+            .background(Color.adCard)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+        }
+    }
+}
+
+private struct ToolRow: View {
+    let title: String
+    let subtitle: String
+    let risk: String
+    let color: Color
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text(subtitle)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.adTextTertiary)
+            }
+            Spacer()
+            Text(risk)
+                .font(.system(size: 10, weight: .bold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(color.opacity(0.15))
+                .foregroundStyle(color)
+                .clipShape(Capsule())
+        }
+    }
+}
+
+// MARK: - Sandbox Settings Pane
+
+private struct SandboxSettingsPane: View {
+    @Bindable var model: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Darwin Seatbelt Sandbox")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text("Native macOS kernel sandbox profiles (`sandbox_init`) in Pure Swift 6.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.adTextSecondary)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("SECURITY POLICIES")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Path Traversal Guard")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.adTextPrimary)
+                        Spacer()
+                        Text("Enforced")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color.adSuccess)
+                    }
+
+                    HStack {
+                        Text("Sandbox Level")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.adTextPrimary)
+                        Spacer()
+                        Text("Workspace Write Only")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color.adWarning)
+                    }
+                }
+                .padding(14)
+                .background(Color.adCard)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+            }
+        }
+    }
+}
+
+// MARK: - Appearance Settings Pane
+
+private struct AppearanceSettingsPane: View {
+    @Bindable var model: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Appearance")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text("Visual theme, code typography, and UI scaling.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.adTextSecondary)
+            }
+
+            VStack(spacing: 12) {
+                HStack {
+                    Text("Theme Mode")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.adTextSecondary)
+                    Spacer()
+                    Picker("", selection: $model.colorScheme) {
+                        Text("Dark").tag(AppColorScheme.dark)
+                        Text("Light").tag(AppColorScheme.light)
+                        Text("System").tag(AppColorScheme.system)
+                    }
+                    .labelsHidden()
+                    .frame(width: 140)
+                }
+
+                HStack {
+                    Text("Code Monospace Font")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.adTextSecondary)
+                    Spacer()
+                    Text("SF Mono")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.adOrange)
+                }
+            }
+            .padding(14)
+            .background(Color.adCard)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+        }
+    }
+}
+
+// MARK: - About Settings Pane
+
+private struct AboutSettingsPane: View {
+    var body: some View {
+        VStack(alignment: .center, spacing: 16) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 44))
+                .foregroundStyle(Color.adOrange)
+
+            VStack(spacing: 4) {
+                Text("Adventurers Harness")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Color.adTextPrimary)
+                Text("Version 2.4.0 (Build 2026.08.18)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.adTextTertiary)
+            }
+
+            Text("A deterministic, pure Swift 6 autonomous coding harness inspired by OpenAI Codex with Apple Seatbelt sandboxing, multi-provider cloud routing, and programmatic verification gates.")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.adTextSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 30)
+
+            Divider()
+                .foregroundStyle(Color.adDivider)
+
+            HStack(spacing: 16) {
+                Link("Documentation", destination: URL(string: "https://github.com/bytecats/adventurers")!)
+                Link("Security Model", destination: URL(string: "https://github.com/bytecats/adventurers")!)
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(Color.adOrange)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}

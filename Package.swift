@@ -12,10 +12,7 @@ let package = Package(
         .library(name: "AdventurersCore", targets: ["AdventurersCore"]),
         .library(name: "LLMProviders", targets: ["LLMProviders"]),
     ],
-    dependencies: [
-        // LLM API clients
-        .package(url: "https://github.com/openai/openai-swift.git", from: "0.3.0"),
-    ],
+    dependencies: [],
     targets: [
         // Core harness: agent loop, FSM, gates, contracts, journal
         .target(

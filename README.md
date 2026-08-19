@@ -69,9 +69,40 @@ Sources/
 ## Getting Started
 
 ```bash
+# Build and run locally
 swift build
 swift run Adventurers
+
+# Run unit tests
+swift test
 ```
+
+## Build & Release Packaging (macOS ARM64)
+
+Adventurers Harness includes a vector icon build pipeline and automated packager:
+
+```bash
+# Generate high-resolution Apple standard .icns from SVG
+./scripts/generate_icon.sh
+
+# Build, codesign, and package Adventurers.app, DMG installer, and ZIP archive
+./scripts/package_app.sh 1.0.0
+```
+
+Output artifacts in `dist/`:
+- `dist/Adventurers.app` (macOS Application Bundle)
+- `dist/Adventurers-macOS-arm64.dmg` (Disk Image Installer)
+- `dist/Adventurers-macOS-arm64.zip` (Distribution Archive)
+- `dist/Adventurers-macOS-arm64.dmg.sha256` (Integrity Checksum)
+
+## CI / CD Pipeline
+
+Automated via GitHub Actions in [`.github/workflows/build-macos-arm64.yml`](.github/workflows/build-macos-arm64.yml):
+- Native Apple Silicon runner (`macos-14` / `arm64`)
+- Validates Swift 6 build & 13 unit tests
+- Renders SVG icon to multi-resolution `.icns`
+- Builds and packages `.app`, `.dmg`, and `.zip`
+- Publishes automated GitHub releases with checksums on `v*` tags
 
 ## License
 

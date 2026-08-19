@@ -72,7 +72,7 @@ struct AdventurersButton: View {
         switch style {
         case .primary:      return .adOrange
         case .secondary:    return Color.adOverlay
-        case .ghost:        = Color.clear
+        case .ghost:        return Color.clear
         case .destructive:  return .adError
         }
     }
@@ -479,47 +479,6 @@ struct SkeletonView: View {
     }
 }
 
-// MARK: - SectionHeader
-
-/// A section header with title and optional trailing action button.
-struct SectionHeader: View {
-    let title: String
-    var subtitle: String? = nil
-    var actionTitle: String? = nil
-    var onAction: (() -> Void)? = nil
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.adHeading)
-                    .foregroundStyle(Color.adTextPrimary)
-
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.adCaption)
-                        .foregroundStyle(Color.adTextSecondary)
-                }
-            }
-
-            Spacer()
-
-            if let actionTitle, let onAction {
-                Button(action: onAction) {
-                    HStack(spacing: ADSpacing.xs) {
-                        Text(actionTitle)
-                            .font(.adLabel)
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                    .foregroundStyle(Color.adOrange)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.vertical, ADSpacing.sm)
-    }
-}
 
 // MARK: - GateStatusBadge
 
@@ -532,7 +491,7 @@ struct GateStatusBadge: View {
         HStack(spacing: ADSpacing.xs) {
             if let passed {
                 Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundStyle(passed ? .adSuccess : .adError)
+                    .foregroundStyle(passed ? Color.adSuccess : Color.adError)
                     .font(.system(size: 11))
             } else {
                 ProgressView()
@@ -556,7 +515,7 @@ struct GateStatusBadge: View {
 struct PermissionRow: View {
     let title: String
     let gate: GateType
-    let risk: RiskLevel
+    let risk: PermissionRiskLevel
     @Binding var isEnabled: Bool
 
     var body: some View {
@@ -568,7 +527,7 @@ struct PermissionRow: View {
 
                 HStack(spacing: ADSpacing.sm) {
                     GateStatusBadge(gate: gate)
-                    BadgeView(text: risk.label, color: risk.color, size: .small)
+                    BadgeView(text: risk.label, color: risk.displayColor, size: .small)
                 }
             }
 
@@ -684,6 +643,343 @@ struct MiniLogLine: View {
     }
 }
 
+// MARK: - Model Capacity Metadata
+
+public struct ModelCapacityInfo: Sendable {
+    public let label: String
+    public let monthlyCapacity: String
+    public let badgeColor: Color
+    public let tierName: String
+}
+
+public func modelCapacityInfo(for model: String) -> ModelCapacityInfo? {
+    let lower = model.lowercased()
+    if lower.contains("mimo-v2.5") && !lower.contains("pro") {
+        return ModelCapacityInfo(label: "150k/mo", monthlyCapacity: "150,400 req/mo", badgeColor: .adSuccess, tierName: "Cheapest")
+    } else if lower.contains("deepseek-v4-flash") {
+        return ModelCapacityInfo(label: "38k/mo", monthlyCapacity: "37,800 req/mo", badgeColor: .adSuccess, tierName: "Ultra Fast")
+    } else if lower.contains("qwen3.7-plus") || lower.contains("hy3") {
+        return ModelCapacityInfo(label: "21.6k/mo", monthlyCapacity: "21,600 req/mo", badgeColor: .adSuccess, tierName: "High Throughput")
+    } else if lower.contains("minimax-m2.7") {
+        return ModelCapacityInfo(label: "17k/mo", monthlyCapacity: "17,000 req/mo", badgeColor: .adSuccess, tierName: "High Throughput")
+    } else if lower.contains("qwen3.6-plus") || lower.contains("mimo-v2.5-pro") || lower.contains("minimax-m3") {
+        return ModelCapacityInfo(label: "16k/mo", monthlyCapacity: "16,000 req/mo", badgeColor: .adSuccess, tierName: "Balanced")
+    } else if lower.contains("gpt-5.6-luna") {
+        return ModelCapacityInfo(label: "10k/mo", monthlyCapacity: "10,250 req/mo", badgeColor: .adInfo, tierName: "Balanced")
+    } else if lower.contains("kimi-k2.7") {
+        return ModelCapacityInfo(label: "6.7k/mo", monthlyCapacity: "6,750 req/mo", badgeColor: .adInfo, tierName: "Agentic Code")
+    } else if lower.contains("kimi-k2.6") {
+        return ModelCapacityInfo(label: "5.7k/mo", monthlyCapacity: "5,750 req/mo", badgeColor: .adInfo, tierName: "Agentic Code")
+    } else if lower.contains("deepseek-v4-pro") {
+        return ModelCapacityInfo(label: "5.2k/mo", monthlyCapacity: "5,200 req/mo", badgeColor: .adInfo, tierName: "Reasoning")
+    } else if lower.contains("glm-5.2") || lower.contains("glm-5.1") {
+        return ModelCapacityInfo(label: "4.3k/mo", monthlyCapacity: "4,300 req/mo", badgeColor: .adInfo, tierName: "Reasoning")
+    } else if lower.contains("qwen3.7-max") {
+        return ModelCapacityInfo(label: "1.7k/mo", monthlyCapacity: "1,690 req/mo", badgeColor: .adOrange, tierName: "Frontier")
+    } else if lower.contains("glm-5.3") {
+        return ModelCapacityInfo(label: "1.1k/mo", monthlyCapacity: "1,080 req/mo", badgeColor: .adOrange, tierName: "Flagship Reasoning")
+    } else if lower.contains("qwen3.8-max") {
+        return ModelCapacityInfo(label: "810/mo", monthlyCapacity: "810 req/mo", badgeColor: .adWarning, tierName: "Flagship")
+    } else if lower.contains("grok-4.5") {
+        return ModelCapacityInfo(label: "600/mo", monthlyCapacity: "600 req/mo", badgeColor: .adWarning, tierName: "Frontier")
+    } else if lower.contains("kimi-k3") {
+        return ModelCapacityInfo(label: "490/mo", monthlyCapacity: "490 req/mo", badgeColor: .adWarning, tierName: "Flagship")
+    }
+    return nil
+}
+
+// MARK: - Paginated Searchable Combobox
+
+public struct PaginatedSearchableCombobox: View {
+    @Binding public var selection: String
+    public let title: String
+    public let items: [String]
+    public let pageSize: Int
+    public var onRefresh: (() -> Void)?
+
+    @State private var isPresented = false
+    @State private var searchQuery = ""
+    @State private var currentPage = 0
+    @State private var selectedCategory: ModelCategory = .all
+
+    public enum ModelCategory: String, CaseIterable, Identifiable {
+        case all = "All"
+        case cheapest = "Cheapest"
+        case coding = "Coding"
+        case reasoning = "Reasoning"
+        case fast = "Fast"
+
+        public var id: String { rawValue }
+    }
+
+    public init(
+        selection: Binding<String>,
+        title: String = "Select Model",
+        items: [String],
+        pageSize: Int = 8,
+        onRefresh: (() -> Void)? = nil
+    ) {
+        self._selection = selection
+        self.title = title
+        self.items = items
+        self.pageSize = pageSize
+        self.onRefresh = onRefresh
+    }
+
+    private var filteredItems: [String] {
+        items.filter { item in
+            let queryMatch = searchQuery.isEmpty || item.localizedCaseInsensitiveContains(searchQuery)
+            let categoryMatch: Bool
+            let lower = item.lowercased()
+            switch selectedCategory {
+            case .all:
+                categoryMatch = true
+            case .cheapest:
+                categoryMatch = lower.contains("mimo") || lower.contains("flash") || lower.contains("plus") || lower.contains("hy3") || lower.contains("mini")
+            case .coding:
+                categoryMatch = lower.contains("code") || lower.contains("coder") || lower.contains("glm") || lower.contains("sonnet") || lower.contains("kimi")
+            case .reasoning:
+                categoryMatch = lower.contains("reason") || lower.contains("r1") || lower.contains("o1") || lower.contains("o3") || lower.contains("thinking") || lower.contains("grok") || lower.contains("5.3") || lower.contains("5.2")
+            case .fast:
+                categoryMatch = lower.contains("flash") || lower.contains("mini") || lower.contains("haiku") || lower.contains("fast") || lower.contains("air")
+            }
+            return queryMatch && categoryMatch
+        }
+    }
+
+    private var totalPages: Int {
+        max(1, Int(ceil(Double(filteredItems.count) / Double(pageSize))))
+    }
+
+    private var paginatedItems: [String] {
+        let start = min(currentPage * pageSize, max(0, filteredItems.count - 1))
+        let end = min(start + pageSize, filteredItems.count)
+        guard start < end else { return [] }
+        return Array(filteredItems[start..<end])
+    }
+
+    public var body: some View {
+        Button {
+            isPresented = true
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color.adSuccess)
+                    .frame(width: 6, height: 6)
+
+                Text(selection.isEmpty ? "Select Model" : selection)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.adTextPrimary)
+                    .lineLimit(1)
+
+                if let info = modelCapacityInfo(for: selection) {
+                    Text(info.label)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(info.badgeColor)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(info.badgeColor.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.adTextTertiary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.adElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.adDivider, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            VStack(spacing: 0) {
+                // Header & Search
+                VStack(spacing: 8) {
+                    HStack {
+                        Text(title)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color.adTextPrimary)
+                        Spacer()
+                        if let onRefresh {
+                            Button {
+                                onRefresh()
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.adOrange)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Refresh models from API")
+                        }
+                    }
+
+                    // Search Field
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.adTextTertiary)
+
+                        TextField("Search \(items.count) models...", text: $searchQuery)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 11))
+                            .onChange(of: searchQuery) { _, _ in
+                                currentPage = 0
+                            }
+
+                        if !searchQuery.isEmpty {
+                            Button {
+                                searchQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Color.adTextTertiary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.adBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.adDivider, lineWidth: 1)
+                    )
+
+                    // Category Filter Pills
+                    HStack(spacing: 4) {
+                        ForEach(ModelCategory.allCases) { cat in
+                            Button {
+                                selectedCategory = cat
+                                currentPage = 0
+                            } label: {
+                                Text(cat.rawValue)
+                                    .font(.system(size: 9, weight: selectedCategory == cat ? .bold : .medium))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(selectedCategory == cat ? Color.adOrange.opacity(0.2) : Color.adElevated)
+                                    .foregroundStyle(selectedCategory == cat ? Color.adOrange : Color.adTextSecondary)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Color.adNavy)
+
+                Divider()
+
+                // Items List
+                if paginatedItems.isEmpty {
+                    VStack(spacing: 6) {
+                        Image(systemName: "tray")
+                            .font(.system(size: 18))
+                            .foregroundStyle(Color.adTextTertiary)
+                        Text("No matching models found")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.adTextSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 2) {
+                            ForEach(paginatedItems, id: \.self) { item in
+                                Button {
+                                    selection = item
+                                    isPresented = false
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Text(item)
+                                            .font(.system(size: 11, design: .monospaced))
+                                            .foregroundStyle(selection == item ? Color.adOrange : Color.adTextPrimary)
+                                            .lineLimit(1)
+
+                                        Spacer()
+
+                                        if let info = modelCapacityInfo(for: item) {
+                                            Text(info.label)
+                                                .font(.system(size: 9, weight: .bold))
+                                                .foregroundStyle(info.badgeColor)
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 2)
+                                                .background(info.badgeColor.opacity(0.12))
+                                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                        }
+
+                                        if selection == item {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundStyle(Color.adOrange)
+                                        }
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(selection == item ? Color.adOrange.opacity(0.12) : Color.clear)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(6)
+                    }
+                    .frame(maxHeight: 240)
+                }
+
+                Divider()
+
+                // Pagination Footer
+                HStack {
+                    Text("\(filteredItems.count) models")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.adTextTertiary)
+
+                    Spacer()
+
+                    HStack(spacing: 6) {
+                        Button {
+                            if currentPage > 0 { currentPage -= 1 }
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(currentPage > 0 ? Color.adTextPrimary : Color.adTextTertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(currentPage == 0)
+
+                        Text("Page \(currentPage + 1) of \(totalPages)")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Color.adTextSecondary)
+
+                        Button {
+                            if currentPage < totalPages - 1 { currentPage += 1 }
+                        } label: {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(currentPage < totalPages - 1 ? Color.adTextPrimary : Color.adTextTertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(currentPage >= totalPages - 1)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.adNavy)
+            }
+            .frame(width: 320)
+            .background(Color.adBackground)
+        }
+    }
+}
+
 // MARK: - Preview Provider
 
 #if DEBUG
@@ -692,7 +988,7 @@ struct Theme_Previews: PreviewProvider {
         ScrollView {
             VStack(spacing: ADSpacing.xl) {
                 // Buttons
-                SectionHeader(title: "Buttons")
+                SectionHeader(title: "Buttons", subtitle: "")
                 HStack {
                     AdventurersButton(title: "Primary", style: .primary) {}
                     AdventurersButton(title: "Secondary", style: .secondary) {}
@@ -701,7 +997,7 @@ struct Theme_Previews: PreviewProvider {
                 }
 
                 // Badges
-                SectionHeader(title: "Badges")
+                SectionHeader(title: "Badges", subtitle: "")
                 HStack {
                     BadgeView(text: "Syntax", color: .adSyntaxGate)
                     BadgeView(text: "Memory", color: .adMemoryGate)
@@ -710,7 +1006,7 @@ struct Theme_Previews: PreviewProvider {
                 }
 
                 // Status dots
-                SectionHeader(title: "Status Dots")
+                SectionHeader(title: "Status Dots", subtitle: "")
                 HStack {
                     StatusDot(color: .adSuccess)
                     StatusDot(color: .adWarning, isPulsing: true)
@@ -719,27 +1015,27 @@ struct Theme_Previews: PreviewProvider {
                 }
 
                 // Progress rings
-                SectionHeader(title: "Progress Rings")
+                SectionHeader(title: "Progress Rings", subtitle: "")
                 HStack {
                     ProgressRing(progress: 0.7, showLabel: true)
-                    ProgressRing(progress: 0.35, color: .adSuccess, size: 60, showLabel: true)
-                    ProgressRing(progress: 0.9, color: .adInfo, lineWidth: 6, size: 52)
+                    ProgressRing(progress: 0.35, size: 60, color: .adSuccess, showLabel: true)
+                    ProgressRing(progress: 0.9, lineWidth: 6, size: 52, color: .adInfo)
                 }
 
                 // Search
-                SectionHeader(title: "Search Field")
+                SectionHeader(title: "Search Field", subtitle: "")
                 SearchField(text: .constant(""), placeholder: "Search agents…")
 
                 // Toggle pill
-                SectionHeader(title: "Toggle Pill")
+                SectionHeader(title: "Toggle Pill", subtitle: "")
                 TogglePill(options: ["All", "Active", "Idle", "Error"], selectedIndex: .constant(0))
 
                 // Alert banner
-                SectionHeader(title: "Alert Banner")
+                SectionHeader(title: "Alert Banner", subtitle: "")
                 AlertBanner(kind: .success, message: "Gate passed: Compilation complete.")
 
                 // Agent card
-                SectionHeader(title: "Agent Status Card")
+                SectionHeader(title: "Agent Status Card", subtitle: "")
                 AgentStatusCard(
                     name: "Navigator",
                     role: "Code Agent",
@@ -748,7 +1044,7 @@ struct Theme_Previews: PreviewProvider {
                 )
 
                 // Gate badges
-                SectionHeader(title: "Gate Status Badges")
+                SectionHeader(title: "Gate Status Badges", subtitle: "")
                 HStack {
                     GateStatusBadge(gate: .syntax, passed: true)
                     GateStatusBadge(gate: .compilation, passed: false)
@@ -756,7 +1052,7 @@ struct Theme_Previews: PreviewProvider {
                 }
 
                 // Skeleton
-                SectionHeader(title: "Skeleton Loading")
+                SectionHeader(title: "Skeleton Loading", subtitle: "")
                 VStack(alignment: .leading, spacing: ADSpacing.sm) {
                     SkeletonView(height: 14, width: 200)
                     SkeletonView(height: 10)
@@ -764,7 +1060,7 @@ struct Theme_Previews: PreviewProvider {
                 }
 
                 // Log lines
-                SectionHeader(title: "Log Lines")
+                SectionHeader(title: "Log Lines", subtitle: "")
                 VStack(alignment: .leading) {
                     MiniLogLine(timestamp: "12:34:01", message: "Gate syntax: passed", level: .info)
                     MiniLogLine(timestamp: "12:34:02", message: "Warning: retrying connection", level: .warning)

@@ -1,0 +1,110 @@
+name: Build & Package macOS ARM64
+
+on:
+  push:
+    branches: [main, master]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.0)'
+        required: false
+        default: '1.0.0'
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-package:
+    name: Build macOS Apple Silicon (arm64)
+    runs-on: macos-14 # Native Apple Silicon M-series runner
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate Apple Silicon Runner
+        run: |
+          echo "Architecture: $(uname -m)"
+          echo "macOS Version: $(sw_vers -productVersion)"
+          if [ "$(uname -m)" != "arm64" ]; then
+            echo "::error::Runner must be macOS arm64 (Apple Silicon). Got $(uname -m)"
+            exit 1
+          fi
+
+      - name: Cache SwiftPM Dependencies & Build Cache
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Show Swift Toolchain Version
+        run: swift --version
+
+      - name: Run Core Test Suite
+        run: |
+          echo "🧪 Running unit tests on macOS arm64..."
+          swift test
+
+      - name: Generate AppIcon (.icns) from SVG
+        run: |
+          echo "🎨 Generating high-resolution AppIcon.icns..."
+          chmod +x scripts/generate_icon.sh
+          ./scripts/generate_icon.sh
+
+      - name: Package macOS App, DMG & ZIP
+        run: |
+          echo "📦 Packaging Release application for Apple Silicon..."
+          chmod +x scripts/package_app.sh
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}" # strip leading v if present
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
+            VERSION="1.0.0"
+          fi
+          ./scripts/package_app.sh "$VERSION"
+
+      - name: Verify Package Contents & Checksums
+        run: |
+          echo "🔍 Listing dist artifacts:"
+          ls -lh dist/
+          echo "🔒 SHA256 Checksums:"
+          cat dist/*.sha256
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Adventurers-macOS-arm64
+          path: |
+            dist/Adventurers-macOS-arm64.dmg
+            dist/Adventurers-macOS-arm64.zip
+            dist/Adventurers-macOS-arm64.dmg.sha256
+            dist/Adventurers-macOS-arm64.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Adventurers Harness ${{ github.ref_name }} (macOS arm64)
+          draft: false
+          prerelease: false
+          files: |
+            dist/Adventurers-macOS-arm64.dmg
+            dist/Adventurers-macOS-arm64.zip
+            dist/Adventurers-macOS-arm64.dmg.sha256
+            dist/Adventurers-macOS-arm64.zip.sha256
+          generate_release_notes: true

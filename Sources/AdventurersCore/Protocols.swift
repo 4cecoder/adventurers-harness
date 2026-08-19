@@ -1,21 +1,8 @@
 // AdventurersCore - Core harness protocols and types
-// The heart of the Adventurers Harness
+// Imports shared types from LLMProviders to avoid circular dependencies
 
 import Foundation
-
-// MARK: - LLM Provider Protocol
-
-/// Unified interface for LLM communication.
-/// Any provider (OpenAI, Anthropic, local, CLI-wrapped) conforms to this.
-public protocol LLMProvider: Sendable {
-    var name: String { get }
-    var supportsConversations: Bool { get }
-
-    func send(messages: [Message], config: LLMConfig) async throws -> LLMResponse
-    func stream(messages: [Message], config: LLMConfig) -> AsyncThrowingStream<LLMChunk, Error>
-    func newConversation(system: String) async throws -> String
-    func resume(conversationID: String, message: String) async throws -> String
-}
+import LLMProviders
 
 // MARK: - Tool Protocol
 
@@ -66,96 +53,35 @@ public struct GateResult: Sendable {
     }
 }
 
-// MARK: - Data Types
-
-public struct Message: Sendable, Codable {
-    public let role: Role
-    public let content: String
-
-    public enum Role: String, Sendable, Codable {
-        case system, user, assistant, tool
-    }
-
-    public init(role: Role, content: String) {
-        self.role = role
-        self.content = content
-    }
-}
-
-public struct LLMResponse: Sendable {
-    public let content: String
-    public let toolCalls: [ToolCall]
-    public let usage: TokenUsage?
-
-    public init(content: String, toolCalls: [ToolCall] = [], usage: TokenUsage? = nil) {
-        self.content = content
-        self.toolCalls = toolCalls
-        self.usage = usage
-    }
-}
-
-public struct LLMChunk: Sendable {
-    public let delta: String
-    public let finishReason: String?
-}
-
-public struct ToolCall: Sendable, Codable {
-    public let id: String
-    public let name: String
-    public let arguments: [String: AnyCodable]
-}
-
-public struct ToolResult: Sendable {
-    public let output: String
-    public let error: String?
-    public let metadata: [String: String]
-
-    public init(output: String, error: String? = nil, metadata: [String: String] = [:]) {
-        self.output = output
-        self.error = error
-        self.metadata = metadata
-    }
-}
-
-public struct TokenUsage: Sendable {
-    public let promptTokens: Int
-    public let completionTokens: Int
-    public let totalTokens: Int
-}
+// MARK: - Agent Output
 
 public struct AgentOutput: Sendable {
     public let content: String
     public let toolCalls: [ToolCall]
     public let turnIndex: Int
     public let timestamp: Date
+
+    public init(content: String, toolCalls: [ToolCall] = [], turnIndex: Int, timestamp: Date) {
+        self.content = content
+        self.toolCalls = toolCalls
+        self.turnIndex = turnIndex
+        self.timestamp = timestamp
+    }
 }
 
 public struct GateContext: Sendable {
     public let taskID: String
     public let contract: TaskContract
     public let previousOutputs: [AgentOutput]
+
+    public init(taskID: String, contract: TaskContract, previousOutputs: [AgentOutput]) {
+        self.taskID = taskID
+        self.contract = contract
+        self.previousOutputs = previousOutputs
+    }
 }
 
 // MARK: - Configuration
-
-public struct LLMConfig: Sendable, Codable {
-    public var provider: String
-    public var model: String
-    public var temperature: Double?
-    public var maxTokens: Int?
-    public var baseURL: String?
-    public var apiKey: String?
-
-    public init(provider: String, model: String, temperature: Double? = nil,
-                maxTokens: Int? = nil, baseURL: String? = nil, apiKey: String? = nil) {
-        self.provider = provider
-        self.model = model
-        self.temperature = temperature
-        self.maxTokens = maxTokens
-        self.baseURL = baseURL
-        self.apiKey = apiKey
-    }
-}
 
 public struct HarnessConfig: Sendable, Codable {
     public var llm: LLMConfig
@@ -211,36 +137,4 @@ public struct JSONSchemaProperty: Sendable {
         self.description = description
         self.enumValues = enumValues
     }
-}
-
-// MARK: - AnyCodable helper
-
-public struct AnyCodable: Sendable, Codable {
-    private let value: Any
-
-    public init(_ value: Any) { self.value = value }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let int = try? container.decode(Int.self) { value = int }
-        else if let double = try? container.decode(Double.self) { value = double }
-        else if let bool = try? container.decode(Bool.self) { value = bool }
-        else if let string = try? container.decode(String.self) { value = string }
-        else if let dict = try? container.decode([String: AnyCodable].self) { value = dict }
-        else if let arr = try? container.decode([AnyCodable].self) { value = arr }
-        else { value = NSNull() }
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        if let int = value as? Int { try container.encode(int) }
-        else if let double = value as? Double { try container.encode(double) }
-        else if let bool = value as? Bool { try container.encode(bool) }
-        else if let string = value as? String { try container.encode(string) }
-        else if let dict = value as? [String: AnyCodable] { try container.encode(dict) }
-        else if let arr = value as? [AnyCodable] { try container.encode(arr) }
-        else { try container.encodeNil() }
-    }
-
-    public func unwrap() -> Any { value }
 }
