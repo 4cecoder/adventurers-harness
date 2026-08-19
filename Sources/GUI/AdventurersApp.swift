@@ -618,7 +618,7 @@ struct ModelSelectorMenu: View {
                 }
             } else {
                 Section("Active Provider") {
-                    ForEach(LLMProviderType.allCases, id: \.self) { provider in
+                    ForEach(ProviderType.allCases, id: \.self) { provider in
                         Button {
                             appState.settingsModel.activeProvider = provider
                         } label: {
