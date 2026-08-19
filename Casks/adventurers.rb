@@ -1,6 +1,6 @@
 cask "adventurers" do
   version "1.0.0"
-  sha256 "d715a109bea3651b3b32274e72be72141c85fa1322b7dec59a381f9ad964b540"
+  sha256 "8ae3e76db43a8ccdd276aa6858b012e36650c349e93370ef008cb2b74bd6c814"
 
   url "https://github.com/4cecoder/adventurers-harness/releases/download/v#{version}/Adventurers-macOS-arm64.dmg"
   name "Adventurers Harness"
