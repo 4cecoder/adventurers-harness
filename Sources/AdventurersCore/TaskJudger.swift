@@ -140,16 +140,68 @@ public final class TaskJudgerEngine: Sendable {
             )
         }
 
-        // 5. Default: Scoped Action (Fix, Edit, or localized feature)
+        // 5. Default: Fast Scoped Action (Fix, Edit, or localized feature)
         return TaskJudgerDecision(
             tier: .mediumAction,
-            recommendedTurnBudget: 4,
+            recommendedTurnBudget: 3,
             shouldInitializeTaskContract: false,
-            shouldEnableAutoCheckpoints: true,
-            systemGuidanceSnippet: "SCOPED ACTION: Apply necessary modifications directly to target files and verify in minimal round-trips.",
-            reason: "Standard code edit or localized bug fix.",
-            estimatedTokenSavingsPercent: 40.0
+            shouldEnableAutoCheckpoints: false,
+            systemGuidanceSnippet: "FAST SHORT-HORIZON: Apply targeted edits directly and conclude in minimal turns without plan overhead.",
+            reason: "Standard fast localized edit. Upgrades dynamically if multi-file mutations occur.",
+            estimatedTokenSavingsPercent: 50.0
         )
+    }
+
+    /// Evaluates in-flight execution decisions and dynamically upgrades a short-horizon task to long-horizon if complexity escalates.
+    public func upgradeIfNecessary(
+        currentTier: TaskComplexityTier,
+        turnIndex: Int,
+        modifiedFilesCount: Int,
+        hasErrorOrRetry: Bool,
+        prompt: String
+    ) -> TaskJudgerDecision? {
+        guard currentTier != .longHorizon else { return nil }
+
+        // Upgrade condition 1: Multi-file mutation detected (> 1 file touched)
+        if modifiedFilesCount > 1 {
+            return TaskJudgerDecision(
+                tier: .longHorizon,
+                recommendedTurnBudget: max(12, turnIndex + 8),
+                shouldInitializeTaskContract: true,
+                shouldEnableAutoCheckpoints: true,
+                systemGuidanceSnippet: "UPGRADED TO LONG-HORIZON: Multiple file modifications detected. Track checkpoints and execute atomic steps.",
+                reason: "Dynamic upgrade: touched \(modifiedFilesCount) files.",
+                estimatedTokenSavingsPercent: 10.0
+            )
+        }
+
+        // Upgrade condition 2: In-flight error requiring compiler/test recovery
+        if hasErrorOrRetry && turnIndex >= 2 {
+            return TaskJudgerDecision(
+                tier: .longHorizon,
+                recommendedTurnBudget: max(10, turnIndex + 6),
+                shouldInitializeTaskContract: true,
+                shouldEnableAutoCheckpoints: true,
+                systemGuidanceSnippet: "UPGRADED TO LONG-HORIZON: Error recovery sequence active. Formulate fix plan and verify gates before concluding.",
+                reason: "Dynamic upgrade: Error recovery loop active at turn \(turnIndex).",
+                estimatedTokenSavingsPercent: 15.0
+            )
+        }
+
+        // Upgrade condition 3: Turn budget approaching short-horizon limit
+        if turnIndex >= currentTier.defaultTurnBudget {
+            return TaskJudgerDecision(
+                tier: .longHorizon,
+                recommendedTurnBudget: 12,
+                shouldInitializeTaskContract: true,
+                shouldEnableAutoCheckpoints: true,
+                systemGuidanceSnippet: "UPGRADED TO LONG-HORIZON: Turn budget extended for complete multi-step resolution.",
+                reason: "Dynamic upgrade: Reached turn \(turnIndex) in \(currentTier.rawValue).",
+                estimatedTokenSavingsPercent: 20.0
+            )
+        }
+
+        return nil
     }
 
     private func hasActionKeywords(_ text: String) -> Bool {

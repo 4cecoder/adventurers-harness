@@ -471,11 +471,13 @@ public final class ThreadViewModel: ObservableObject {
             var compoundedToolResults: [ThreadToolResult] = []
             var compoundedReasoning = ""
 
+            var currentTurn = 0
             while maxTurns > 0 && !Task.isCancelled {
                 await self.checkPauseState()
                 guard !Task.isCancelled else { break }
 
                 maxTurns -= 1
+                currentTurn += 1
                 var accumulatedContent = ""
                 var accumulatedReasoning = ""
 
@@ -610,6 +612,36 @@ public final class ThreadViewModel: ObservableObject {
                             thinkingContent: compoundedReasoning.isEmpty ? nil : compoundedReasoning
                         )
                         self.onMessagesChanged?(self.messages)
+                    }
+
+                    // Check for dynamic upgrade from Short-Horizon to Long-Horizon based on decisions
+                    var touchedFiles: Set<String> = []
+                    for inv in toolInvocations {
+                        if let fp = inv.arguments["TargetFile"]?.stringValue
+                            ?? inv.arguments["filePath"]?.stringValue
+                            ?? inv.arguments["path"]?.stringValue {
+                            touchedFiles.insert(fp)
+                        }
+                    }
+
+                    let hasError = executedToolResults.contains { $0.contains("Error:") }
+                    if let upgrade = TaskJudgerEngine.shared.upgradeIfNecessary(
+                        currentTier: judgerDecision.tier,
+                        turnIndex: currentTurn,
+                        modifiedFilesCount: touchedFiles.count,
+                        hasErrorOrRetry: hasError,
+                        prompt: text
+                    ) {
+                        maxTurns = upgrade.recommendedTurnBudget
+                        if self.activeContract == nil, let threadUUID = self.threadID {
+                            self.activeContract = LongHorizonTaskContract(
+                                id: threadUUID,
+                                goal: text,
+                                currentPhase: .execution,
+                                turnBudget: maxTurns
+                            )
+                        }
+                        terminalManager?.logCommand("[Task Judger] ⚡ Upgraded to \(upgrade.tier.rawValue): \(upgrade.reason)")
                     }
 
                     // Add tool results to LLM messages for next turn (budgeted for long horizons)
