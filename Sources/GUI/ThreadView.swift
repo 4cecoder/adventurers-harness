@@ -1064,11 +1064,12 @@ public struct MessageBubbleView: View {
                 thinkingSection(thinking)
             }
 
-            // Tool calls
-            if !message.toolCalls.isEmpty {
-                ForEach(message.toolCalls) { toolCall in
-                    ToolExecutionIndicatorView(toolCall: toolCall)
-                }
+            // Multi-Tool execution cluster (auto-collapsing for multiple tools / large output)
+            if !message.toolCalls.isEmpty || !message.toolResults.isEmpty {
+                MultiToolCallClusterView(
+                    toolCalls: message.toolCalls,
+                    toolResults: message.toolResults
+                )
             }
 
             // Main message content with code blocks
@@ -1077,15 +1078,6 @@ public struct MessageBubbleView: View {
                     content: message.content,
                     isStreaming: message.isStreaming
                 )
-            }
-
-            // Tool results
-            if !message.toolResults.isEmpty {
-                ForEach(message.toolResults) { result in
-                    if !result.output.isEmpty {
-                        toolResultSection(result)
-                    }
-                }
             }
         }
         .padding(.horizontal, 14)
@@ -1578,6 +1570,236 @@ public struct CodeBlockView: View {
             return .green
         }
         return .primary
+    }
+}
+
+// MARK: - MultiToolCallClusterView
+
+/// Auto-collapsing container for one or more tool executions and outputs.
+/// Automatically collapses multiple completed tool calls into a single sleek row,
+/// while keeping running or failed tool calls immediately visible.
+public struct MultiToolCallClusterView: View {
+    public let toolCalls: [ThreadToolCall]
+    public let toolResults: [ThreadToolResult]
+
+    @State private var isExpanded: Bool
+
+    public init(toolCalls: [ThreadToolCall], toolResults: [ThreadToolResult]) {
+        self.toolCalls = toolCalls
+        self.toolResults = toolResults
+        let isRunning = toolCalls.contains(where: {
+            if case .running = $0.status { return true }
+            return false
+        })
+        let hasFailure = toolCalls.contains(where: {
+            if case .failed = $0.status { return true }
+            return false
+        }) || toolResults.contains(where: { $0.isError })
+
+        // Auto-expand if active or failed; auto-collapse if multiple completed tools
+        self._isExpanded = State(initialValue: isRunning || hasFailure || toolCalls.count <= 1)
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Header summary button
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: isRunning ? "arrow.triangle.2.circlepath" : "wrench.and.screwdriver.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(statusColor)
+
+                    Text(summaryTitle)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.adTextPrimary)
+
+                    if !isExpanded {
+                        // Compact tool badges
+                        HStack(spacing: 4) {
+                            ForEach(toolCalls.prefix(4)) { tc in
+                                Text(tc.name)
+                                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .background(Color.adElevated)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    .foregroundStyle(Color.adTextSecondary)
+                            }
+                            if toolCalls.count > 4 {
+                                Text("+\(toolCalls.count - 4)")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(Color.adTextTertiary)
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    Text(isExpanded ? "Collapse" : "Expand")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.adTextTertiary)
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color.adTextTertiary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color.adElevated.opacity(0.85))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(statusColor.opacity(0.3), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+
+            // Expanded tool items
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(toolCalls) { toolCall in
+                        VStack(alignment: .leading, spacing: 4) {
+                            ToolExecutionIndicatorView(toolCall: toolCall)
+
+                            if let matchingResult = toolResults.first(where: { $0.toolCallID == toolCall.id }) ?? (toolCalls.count == 1 ? toolResults.first : nil) {
+                                if !matchingResult.output.isEmpty {
+                                    CollapsibleToolResultView(result: matchingResult)
+                                }
+                            }
+                        }
+                    }
+
+                    // Remaining orphan tool results if any
+                    let orphanResults = toolResults.filter { res in
+                        !toolCalls.contains(where: { $0.id == res.toolCallID }) && toolCalls.count > 1
+                    }
+                    ForEach(orphanResults) { res in
+                        CollapsibleToolResultView(result: res)
+                    }
+                }
+                .padding(.leading, 6)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+    }
+
+    private var isRunning: Bool {
+        toolCalls.contains(where: {
+            if case .running = $0.status { return true }
+            return false
+        })
+    }
+
+    private var hasFailure: Bool {
+        toolCalls.contains(where: {
+            if case .failed = $0.status { return true }
+            return false
+        }) || toolResults.contains(where: { $0.isError })
+    }
+
+    private var statusColor: Color {
+        if isRunning { return Color.adInfo }
+        if hasFailure { return Color.adError }
+        return Color.adSuccess
+    }
+
+    private var summaryTitle: String {
+        if isRunning {
+            let active = toolCalls.first(where: { if case .running = $0.status { return true }; return false })
+            return "Running \(active?.name ?? "tool")..."
+        }
+        if hasFailure {
+            return "Executed \(toolCalls.count) tool\(toolCalls.count == 1 ? "" : "s") (with errors)"
+        }
+        return "Executed \(toolCalls.count) tool\(toolCalls.count == 1 ? "" : "s") • All Succeeded"
+    }
+}
+
+// MARK: - Collapsible Tool Result View
+
+public struct CollapsibleToolResultView: View {
+    public let result: ThreadToolResult
+    @State private var isExpanded: Bool = false
+    @State private var copied: Bool = false
+
+    public init(result: ThreadToolResult) {
+        self.result = result
+        let lineCount = result.output.components(separatedBy: .newlines).count
+        self._isExpanded = State(initialValue: lineCount <= 3 && result.output.count <= 180)
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: result.isError ? "exclamationmark.triangle.fill" : "terminal.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(result.isError ? Color.adError : Color.adTextSecondary)
+
+                Text(result.isError ? "Tool Error" : "Output")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.adTextSecondary)
+
+                let lineCount = result.output.components(separatedBy: .newlines).count
+                Text("(\(lineCount) line\(lineCount == 1 ? "" : "s"), \(result.output.count) B)")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                Spacer()
+
+                #if os(macOS)
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(result.output, forType: .string)
+                    copied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        copied = false
+                    }
+                } label: {
+                    Text(copied ? "Copied!" : "Copy")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(copied ? Color.adSuccess : Color.adTextTertiary)
+                }
+                .buttonStyle(.plain)
+                #endif
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color.adTextTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if isExpanded {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Text(result.output)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(result.isError ? Color.adError : Color.adTextPrimary)
+                        .textSelection(.enabled)
+                }
+                .frame(maxHeight: 280)
+            } else {
+                Text(result.output.prefix(120).replacingOccurrences(of: "\n", with: " ") + (result.output.count > 120 ? "..." : ""))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.adTextTertiary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(8)
+        .background(Color.black.opacity(0.4))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
     }
 }
 
