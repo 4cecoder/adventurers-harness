@@ -131,7 +131,7 @@ final class AppState {
         if let existing = threadViewModels[item.id] {
             return existing
         }
-        let vm = ThreadViewModel(threadID: item.id)
+        let vm = ThreadViewModel(threadID: item.id, workingDirectory: item.workingDirectory)
         vm.selectedModel = settingsModel.selectedModel
         vm.onMessagesChanged = { [weak self] (messages: [ThreadMessage]) in
             guard let self else { return }
@@ -181,7 +181,7 @@ final class AppState {
 
     // MARK: Actions & CRUD Operations
 
-    func createThread(name: String? = nil) {
+    func createThread(name: String? = nil, workingDirectory: String = FileManager.default.currentDirectoryPath) {
         let threadName = name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? name!
             : "Task: Adventure #\(threads.count + 1)"
@@ -195,14 +195,15 @@ final class AppState {
             createdAt: Date(),
             agentName: settingsModel.selectedModel.components(separatedBy: "/").last ?? "Agent",
             isArchived: false,
-            isPinned: false
+            isPinned: false,
+            workingDirectory: workingDirectory
         )
 
         threads.insert(item, at: 0)
         selectedThreadID = item.id
 
         // Initialize thread models
-        let tvm = ThreadViewModel(threadID: item.id)
+        let tvm = ThreadViewModel(threadID: item.id, workingDirectory: item.workingDirectory)
         tvm.selectedModel = settingsModel.selectedModel
         tvm.onMessagesChanged = { [weak self] (messages: [ThreadMessage]) in
             guard let self else { return }

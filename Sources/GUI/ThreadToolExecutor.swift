@@ -10,30 +10,48 @@ import Tools
 public struct ThreadToolExecutor: Sendable {
     public init() {}
 
-    /// Execute a tool by name with arguments.
-    public func execute(name: String, arguments: [String: AnyCodable]) async -> ToolResult {
+    /// Execute a tool by name with arguments scoped to a specific thread working directory.
+    public func execute(name: String, arguments: [String: AnyCodable], workingDirectory: String? = nil) async -> ToolResult {
+        let baseDir = workingDirectory ?? FileManager.default.currentDirectoryPath
+        var scopedArgs = arguments
+
+        // Resolve relative paths inside the thread's working directory
+        if let pathStr = arguments["path"]?.unwrap() as? String, !pathStr.hasPrefix("/") {
+            let resolved = URL(fileURLWithPath: baseDir).appendingPathComponent(pathStr).standardized.path
+            scopedArgs["path"] = AnyCodable(resolved)
+        }
+        if let dirStr = arguments["directory"]?.unwrap() as? String, !dirStr.hasPrefix("/") {
+            let resolved = URL(fileURLWithPath: baseDir).appendingPathComponent(dirStr).standardized.path
+            scopedArgs["directory"] = AnyCodable(resolved)
+        }
+        if name == "bash" || name == "run_command" || name == "shell" {
+            if scopedArgs["cwd"] == nil {
+                scopedArgs["cwd"] = AnyCodable(baseDir)
+            }
+        }
+
         switch name {
         case "bash", "run_command", "shell":
             let tool = BashTool()
-            return (try? await tool.execute(arguments: arguments)) ?? ToolResult(output: "", error: "Execution failed")
+            return (try? await tool.execute(arguments: scopedArgs)) ?? ToolResult(output: "", error: "Execution failed")
         case "view_file", "read_file":
             let tool = ViewFileTool()
-            return (try? await tool.execute(arguments: arguments)) ?? ToolResult(output: "", error: "View failed")
+            return (try? await tool.execute(arguments: scopedArgs)) ?? ToolResult(output: "", error: "View failed")
         case "write_file", "create_file":
             let tool = WriteFileTool()
-            return (try? await tool.execute(arguments: arguments)) ?? ToolResult(output: "", error: "Write failed")
+            return (try? await tool.execute(arguments: scopedArgs)) ?? ToolResult(output: "", error: "Write failed")
         case "edit_file", "patch_file":
             let tool = EditFileTool()
-            return (try? await tool.execute(arguments: arguments)) ?? ToolResult(output: "", error: "Edit failed")
+            return (try? await tool.execute(arguments: scopedArgs)) ?? ToolResult(output: "", error: "Edit failed")
         case "list_dir", "list_directory", "ls":
             let tool = ListDirTool()
-            return (try? await tool.execute(arguments: arguments)) ?? ToolResult(output: "", error: "List failed")
+            return (try? await tool.execute(arguments: scopedArgs)) ?? ToolResult(output: "", error: "List failed")
         case "grep_search", "search", "grep":
             let tool = GrepTool()
-            return (try? await tool.execute(arguments: arguments)) ?? ToolResult(output: "", error: "Grep failed")
+            return (try? await tool.execute(arguments: scopedArgs)) ?? ToolResult(output: "", error: "Grep failed")
         case "glob", "find_files", "find":
             let tool = GlobTool()
-            return (try? await tool.execute(arguments: arguments)) ?? ToolResult(output: "", error: "Glob failed")
+            return (try? await tool.execute(arguments: scopedArgs)) ?? ToolResult(output: "", error: "Glob failed")
         default:
             return ToolResult(output: "", error: "Unknown tool: \(name)")
         }

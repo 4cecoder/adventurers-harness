@@ -17,6 +17,7 @@ public struct PersistedThreadData: Codable, Sendable, Identifiable {
     public var selectedModel: String
     public var isArchived: Bool
     public var isPinned: Bool
+    public var workingDirectory: String?
     public var messages: [PersistedThreadMessage]
 
     public init(
@@ -30,6 +31,7 @@ public struct PersistedThreadData: Codable, Sendable, Identifiable {
         selectedModel: String = "mimo-v2.5",
         isArchived: Bool = false,
         isPinned: Bool = false,
+        workingDirectory: String? = nil,
         messages: [PersistedThreadMessage] = []
     ) {
         self.id = id
@@ -42,6 +44,7 @@ public struct PersistedThreadData: Codable, Sendable, Identifiable {
         self.selectedModel = selectedModel
         self.isArchived = isArchived
         self.isPinned = isPinned
+        self.workingDirectory = workingDirectory
         self.messages = messages
     }
 }
@@ -206,6 +209,7 @@ public final class ThreadStore: Sendable {
             selectedModel: selectedModel,
             isArchived: item.isArchived,
             isPinned: item.isPinned,
+            workingDirectory: item.workingDirectory,
             messages: persistedMessages
         )
 
@@ -237,7 +241,8 @@ public final class ThreadStore: Sendable {
                     createdAt: threadData.createdAt,
                     agentName: threadData.agentName,
                     isArchived: threadData.isArchived,
-                    isPinned: threadData.isPinned
+                    isPinned: threadData.isPinned,
+                    workingDirectory: threadData.workingDirectory ?? FileManager.default.currentDirectoryPath
                 )
                 items.append(item)
             }

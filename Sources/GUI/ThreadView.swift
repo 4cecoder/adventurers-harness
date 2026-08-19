@@ -128,13 +128,18 @@ public final class ThreadViewModel: ObservableObject {
 
     /// The most recent streaming message ID, used for auto-scroll.
     @Published public var lastStreamingMessageID: String?
+    @Published public var workingDirectory: String = FileManager.default.currentDirectoryPath
+    public var workingDirectoryName: String { (workingDirectory as NSString).lastPathComponent }
     public var threadID: UUID?
     public var onMessagesChanged: (([ThreadMessage]) -> Void)?
     public let meteringState = ThreadMeteringState()
     public var activeGenerationTask: Task<Void, Never>? = nil
 
-    public init(threadID: UUID? = nil) {
+    public init(threadID: UUID? = nil, workingDirectory: String? = nil) {
         self.threadID = threadID
+        if let dir = workingDirectory, !dir.isEmpty {
+            self.workingDirectory = dir
+        }
         if let id = threadID {
             let loaded = ThreadStore.shared.loadMessages(for: id)
             if !loaded.isEmpty {
@@ -335,7 +340,7 @@ public final class ThreadViewModel: ObservableObject {
                 )
 
                 var accumulatedOutput = ""
-                let workspace = FileManager.default.currentDirectoryPath
+                let workspace = self.workingDirectory
 
                 do {
                     await self.checkPauseState()
@@ -419,10 +424,15 @@ public final class ThreadViewModel: ObservableObject {
                 apiKey: apiKey
             )
 
-            let currentDir = FileManager.default.currentDirectoryPath
+            let threadWorkspace = self.workingDirectory
             let systemPrompt = """
             You are Adventurers Harness, an autonomous agentic pair programmer with direct access to the local codebase through native tools.
-            You are running directly on macOS in the local repository workspace: \(currentDir).
+            Your thread is rooted in the working directory: \(threadWorkspace).
+
+            WORKSPACE SCOPE & CONFINEMENT RULES:
+            1. SCOPE RETENTION: All relative file paths and tool calls (view_file, write_file, edit_file, list_dir, grep_search, bash) MUST resolve relative to and operate strictly inside '\(threadWorkspace)' by default.
+            2. DIRECTORY BOUNDARY INTEGRITY: Do NOT wander outside this directory tree (e.g. into parent directories '..', sibling repositories, or system paths) unless the user's instructions explicitly and unambiguously command accessing an external path.
+            3. Keep all scratch files, edits, test commands, and builds scoped to '\(threadWorkspace)'.
 
             You have the following tools available:
             1. `view_file`: Read contents of a file with line numbers (path, start_line, end_line)
@@ -631,7 +641,7 @@ public final class ThreadViewModel: ObservableObject {
     }
 
     private func executeNativeTool(name: String, arguments: [String: AnyCodable]) async -> ToolResult {
-        await toolExecutor.execute(name: name, arguments: arguments)
+        await toolExecutor.execute(name: name, arguments: arguments, workingDirectory: self.workingDirectory)
     }
 
     @discardableResult
@@ -698,7 +708,12 @@ public struct ThreadView: View {
     public var body: some View {
         VStack(spacing: 0) {
             // Compact Gate Certification Bar (Expandable on demand)
-            CompactGateBar(state: threadVM.gateState, isExpanded: $isGatesExpanded)
+            CompactGateBar(
+                state: threadVM.gateState,
+                isExpanded: $isGatesExpanded,
+                workingDirectoryName: threadVM.workingDirectoryName,
+                workingDirectory: threadVM.workingDirectory
+            )
 
             if isGatesExpanded {
                 GateProgressView(state: threadVM.gateState)
@@ -777,6 +792,8 @@ public struct ThreadView: View {
 struct CompactGateBar: View {
     @ObservedObject var state: GatePipelineState
     @Binding var isExpanded: Bool
+    var workingDirectoryName: String = "workspace"
+    var workingDirectory: String = ""
 
     var body: some View {
         HStack(spacing: 10) {
@@ -799,6 +816,23 @@ struct CompactGateBar: View {
                         .help("\(node.displayName): \(node.status.isSuccess ? "Passed" : "Pending")")
                 }
             }
+
+            // Thread Workspace Folder Scope Badge
+            HStack(spacing: 4) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.adInfo)
+
+                Text(workingDirectoryName)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.adTextSecondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.adOverlay)
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .help("Thread Root Directory: \(workingDirectory.isEmpty ? workingDirectoryName : workingDirectory)")
 
             Spacer()
 

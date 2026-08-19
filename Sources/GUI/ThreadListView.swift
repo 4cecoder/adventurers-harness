@@ -60,6 +60,7 @@ public struct ThreadItem: Identifiable, Sendable, Hashable {
     public var agentName: String
     public var isArchived: Bool
     public var isPinned: Bool
+    public var workingDirectory: String
 
     public init(
         id: UUID = UUID(),
@@ -70,7 +71,8 @@ public struct ThreadItem: Identifiable, Sendable, Hashable {
         createdAt: Date = Date(),
         agentName: String = "Adventurer",
         isArchived: Bool = false,
-        isPinned: Bool = false
+        isPinned: Bool = false,
+        workingDirectory: String = FileManager.default.currentDirectoryPath
     ) {
         self.id = id
         self.name = name
@@ -81,6 +83,7 @@ public struct ThreadItem: Identifiable, Sendable, Hashable {
         self.agentName = agentName
         self.isArchived = isArchived
         self.isPinned = isPinned
+        self.workingDirectory = workingDirectory
     }
 }
 
