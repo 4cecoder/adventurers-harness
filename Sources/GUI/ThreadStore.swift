@@ -3,6 +3,7 @@
 
 import Foundation
 import SwiftUI
+import AdventurersCore
 
 // MARK: - Persisted Domain Models
 

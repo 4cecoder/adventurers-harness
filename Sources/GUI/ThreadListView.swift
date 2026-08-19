@@ -2,6 +2,7 @@
 // Left sidebar showing agent threads, inspired by Codex's multi-agent organization.
 
 import SwiftUI
+import AdventurersCore
 
 // MARK: - Thread Status
 
