@@ -4,26 +4,30 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Adventurers Harness — Next-Gen macOS Native Coding Agent Harness</title>
-  <meta name="description" content="Next-Gen macOS Native Coding Agent Harness with Deterministic Gate Certification, Darwin Sandboxing, and Meta-Harness Multi-Agent Dispatch.">
+  <meta name="description" content="Next-Gen macOS Native Coding Agent Harness on Apple Silicon (Swift 6). Deterministic 6-Gate Certification, Darwin Sandboxing, and Meta-Harness CLI Dispatch for Antigravity, Claude Code, and Codex.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-dark: #0B0E14;
-      --bg-card: rgba(18, 24, 38, 0.75);
-      --bg-card-hover: rgba(28, 36, 56, 0.85);
+      --bg-dark: #080A0F;
+      --bg-card: rgba(15, 20, 32, 0.75);
+      --bg-card-hover: rgba(24, 32, 50, 0.9);
       --border-color: rgba(255, 255, 255, 0.08);
-      --border-hover: rgba(249, 115, 22, 0.4);
+      --border-hover: rgba(249, 115, 22, 0.5);
       --primary: #F97316;
-      --primary-glow: rgba(249, 115, 22, 0.25);
+      --primary-hover: #FB923C;
+      --primary-glow: rgba(249, 115, 22, 0.35);
       --accent: #38BDF8;
-      --accent-glow: rgba(56, 189, 248, 0.2);
+      --accent-glow: rgba(56, 189, 248, 0.25);
+      --purple: #A855F7;
+      --purple-glow: rgba(168, 85, 247, 0.25);
       --text-main: #F8FAFC;
       --text-muted: #94A3B8;
       --text-dim: #64748B;
       --code-bg: #030712;
       --success: #10B981;
+      --error: #EF4444;
     }
 
     * {
@@ -39,23 +43,30 @@
       line-height: 1.6;
       overflow-x: hidden;
       background-image: 
-        radial-gradient(at 0% 0%, rgba(249, 115, 22, 0.08) 0px, transparent 50%),
-        radial-gradient(at 100% 100%, rgba(56, 189, 248, 0.06) 0px, transparent 50%),
-        radial-gradient(at 50% 50%, rgba(15, 23, 42, 0.5) 0px, transparent 100%);
+        radial-gradient(circle at 20% 0%, rgba(249, 115, 22, 0.12) 0px, transparent 45%),
+        radial-gradient(circle at 80% 20%, rgba(56, 189, 248, 0.08) 0px, transparent 40%),
+        radial-gradient(circle at 50% 70%, rgba(168, 85, 247, 0.06) 0px, transparent 50%),
+        radial-gradient(circle at 50% 100%, rgba(15, 23, 42, 0.6) 0px, transparent 100%);
     }
 
     .container {
-      max-width: 1180px;
+      max-width: 1200px;
       margin: 0 auto;
       padding: 0 24px;
     }
 
+    /* Header */
     header {
-      padding: 32px 0 20px;
+      padding: 24px 0;
       display: flex;
       justify-content: space-between;
       align-items: center;
       border-bottom: 1px solid var(--border-color);
+      backdrop-filter: blur(16px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(8, 10, 15, 0.8);
     }
 
     .logo-container {
@@ -67,25 +78,25 @@
     }
 
     .logo-icon {
-      width: 36px;
-      height: 36px;
+      width: 38px;
+      height: 38px;
       background: linear-gradient(135deg, var(--primary), #EA580C);
-      border-radius: 8px;
+      border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 0 16px var(--primary-glow);
+      box-shadow: 0 0 20px var(--primary-glow);
     }
 
     .logo-text {
-      font-weight: 700;
-      font-size: 1.15rem;
-      letter-spacing: -0.02em;
+      font-weight: 800;
+      font-size: 1.2rem;
+      letter-spacing: -0.03em;
     }
 
     .nav-links {
       display: flex;
-      gap: 20px;
+      gap: 24px;
       align-items: center;
     }
 
@@ -94,50 +105,67 @@
       text-decoration: none;
       font-size: 0.9rem;
       font-weight: 500;
-      transition: color 0.2s;
+      transition: all 0.2s;
     }
 
     .nav-links a:hover {
       color: var(--text-main);
     }
 
-    .hero {
-      padding: 90px 0 60px;
-      text-align: center;
+    .nav-cta {
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: rgba(249, 115, 22, 0.15);
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      color: var(--primary) !important;
+      font-weight: 600 !important;
     }
 
-    .badge {
+    .nav-cta:hover {
+      background: var(--primary);
+      color: #000 !important;
+    }
+
+    /* Hero */
+    .hero {
+      padding: 90px 0 50px;
+      text-align: center;
+      position: relative;
+    }
+
+    .badge-chip {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 6px 14px;
+      gap: 8px;
+      padding: 6px 16px;
       background: rgba(249, 115, 22, 0.1);
-      border: 1px solid rgba(249, 115, 22, 0.25);
+      border: 1px solid rgba(249, 115, 22, 0.3);
       border-radius: 9999px;
-      font-size: 0.8rem;
+      font-size: 0.82rem;
       font-weight: 600;
       color: var(--primary);
-      margin-bottom: 24px;
+      margin-bottom: 28px;
       letter-spacing: 0.02em;
     }
 
     h1 {
-      font-size: 3.5rem;
-      font-weight: 800;
+      font-size: 4rem;
+      font-weight: 900;
       letter-spacing: -0.04em;
-      line-height: 1.15;
-      margin-bottom: 20px;
-      background: linear-gradient(180deg, #FFFFFF 30%, #94A3B8 100%);
+      line-height: 1.1;
+      margin-bottom: 24px;
+      background: linear-gradient(180deg, #FFFFFF 40%, #94A3B8 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
 
-    .hero p {
-      font-size: 1.25rem;
+    .hero-lead {
+      font-size: 1.35rem;
       color: var(--text-muted);
-      max-width: 720px;
-      margin: 0 auto 36px;
+      max-width: 780px;
+      margin: 0 auto 40px;
       font-weight: 400;
+      line-height: 1.6;
     }
 
     .cta-group {
@@ -145,32 +173,32 @@
       justify-content: center;
       gap: 16px;
       flex-wrap: wrap;
-      margin-bottom: 48px;
+      margin-bottom: 56px;
     }
 
     .btn {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-size: 0.95rem;
-      font-weight: 600;
+      gap: 10px;
+      padding: 14px 28px;
+      border-radius: 10px;
+      font-size: 0.98rem;
+      font-weight: 700;
       text-decoration: none;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
       cursor: pointer;
     }
 
     .btn-primary {
-      background: var(--primary);
+      background: linear-gradient(135deg, var(--primary), #EA580C);
       color: #000;
-      box-shadow: 0 0 20px var(--primary-glow);
+      box-shadow: 0 4px 25px var(--primary-glow);
       border: 1px solid transparent;
     }
 
     .btn-primary:hover {
-      background: #FB923C;
-      transform: translateY(-1px);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 30px rgba(249, 115, 22, 0.5);
     }
 
     .btn-secondary {
@@ -181,34 +209,41 @@
     }
 
     .btn-secondary:hover {
-      border-color: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.25);
       background: var(--bg-card-hover);
-      transform: translateY(-1px);
+      transform: translateY(-2px);
     }
 
-    .terminal-card {
-      max-width: 780px;
-      margin: 0 auto 72px;
+    /* Terminal Tab Box */
+    .terminal-container {
+      max-width: 820px;
+      margin: 0 auto 80px;
       background: var(--code-bg);
       border: 1px solid var(--border-color);
-      border-radius: 12px;
+      border-radius: 14px;
       overflow: hidden;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      box-shadow: 0 24px 50px rgba(0, 0, 0, 0.7);
       text-align: left;
     }
 
     .terminal-header {
       background: rgba(255, 255, 255, 0.03);
-      padding: 10px 16px;
+      padding: 12px 18px;
       display: flex;
       align-items: center;
+      justify-content: space-between;
       border-bottom: 1px solid var(--border-color);
+    }
+
+    .terminal-dots {
+      display: flex;
       gap: 8px;
+      align-items: center;
     }
 
     .dot {
-      width: 10px;
-      height: 10px;
+      width: 11px;
+      height: 11px;
       border-radius: 50%;
     }
 
@@ -216,76 +251,275 @@
     .dot-yellow { background: #F59E0B; }
     .dot-green { background: #10B981; }
 
-    .terminal-title {
-      font-size: 0.75rem;
+    .terminal-tabs {
+      display: flex;
+      gap: 6px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
       color: var(--text-dim);
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
       font-family: 'JetBrains Mono', monospace;
-      margin-left: 6px;
+      transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+      color: var(--primary);
+      background: rgba(249, 115, 22, 0.12);
+    }
+
+    .tab-btn:hover:not(.active) {
+      color: var(--text-main);
     }
 
     .terminal-body {
-      padding: 20px;
+      padding: 22px 24px;
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.85rem;
+      font-size: 0.88rem;
       line-height: 1.8;
       color: #E2E8F0;
+      position: relative;
     }
 
-    .command {
-      color: var(--primary);
-    }
-
-    .output {
+    .copy-btn {
+      position: absolute;
+      top: 16px;
+      right: 18px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-color);
       color: var(--text-muted);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 0.75rem;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    .grid {
+    .copy-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      color: #FFF;
+    }
+
+    .prompt-sym { color: var(--primary); font-weight: bold; }
+    .cmd-text { color: #FFF; font-weight: 600; }
+    .comment-text { color: var(--text-dim); }
+    .success-text { color: var(--success); }
+
+    /* Section Headings */
+    .section-head {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .section-head h2 {
+      font-size: 2.4rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 12px;
+    }
+
+    .section-head p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      max-width: 650px;
+      margin: 0 auto;
+    }
+
+    /* Interactive 6-Gate Visualizer */
+    .gates-section {
+      margin-bottom: 100px;
+    }
+
+    .gate-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 24px;
-      margin-bottom: 80px;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 20px;
     }
 
-    .feature-card {
+    .gate-card {
       background: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 28px;
+      border-radius: 14px;
+      padding: 24px;
       backdrop-filter: blur(12px);
       transition: all 0.25s ease;
+      cursor: pointer;
+      position: relative;
     }
 
-    .feature-card:hover {
+    .gate-card:hover, .gate-card.active {
       border-color: var(--border-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+      transform: translateY(-3px);
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5);
     }
 
-    .card-icon {
-      font-size: 1.8rem;
-      margin-bottom: 16px;
-      display: inline-block;
+    .gate-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
     }
 
-    .feature-card h3 {
-      font-size: 1.2rem;
+    .gate-icon-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .gate-icon {
+      font-size: 1.4rem;
+    }
+
+    .gate-name {
+      font-size: 1.1rem;
       font-weight: 700;
-      margin-bottom: 10px;
       letter-spacing: -0.02em;
     }
 
-    .feature-card p {
-      color: var(--text-muted);
-      font-size: 0.9rem;
-      line-height: 1.6;
+    .gate-status-pill {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.3);
     }
 
+    .gate-desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Meta-Harness Matrix */
+    .meta-section {
+      margin-bottom: 100px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+
+    .meta-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 22px;
+      backdrop-filter: blur(12px);
+      transition: all 0.2s;
+    }
+
+    .meta-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+
+    .meta-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--accent);
+      background: rgba(56, 189, 248, 0.1);
+      padding: 3px 8px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+
+    .meta-card h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .meta-card p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-bottom: 14px;
+    }
+
+    .meta-cli-chip {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 4px 8px;
+      border-radius: 6px;
+      color: var(--text-main);
+      display: inline-block;
+    }
+
+    /* Onboarding & Community */
+    .community-section {
+      margin-bottom: 100px;
+      background: linear-gradient(180deg, rgba(18, 24, 38, 0.6) 0%, rgba(8, 10, 15, 0.9) 100%);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 56px 40px;
+      text-align: center;
+    }
+
+    .community-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px;
+      margin-top: 36px;
+      text-align: left;
+    }
+
+    .community-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      text-decoration: none;
+      color: var(--text-main);
+      transition: all 0.2s;
+      display: block;
+    }
+
+    .community-card:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--primary);
+      transform: translateY(-2px);
+    }
+
+    .community-card h4 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .community-card p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* Footer */
     footer {
       border-top: 1px solid var(--border-color);
-      padding: 40px 0;
+      padding: 48px 0;
       text-align: center;
       color: var(--text-dim);
-      font-size: 0.85rem;
+      font-size: 0.88rem;
     }
 
     footer a {
@@ -293,9 +527,14 @@
       text-decoration: none;
     }
 
+    footer a:hover {
+      text-decoration: underline;
+    }
+
     @media (max-width: 768px) {
-      h1 { font-size: 2.4rem; }
-      .hero p { font-size: 1.05rem; }
+      h1 { font-size: 2.6rem; }
+      .hero-lead { font-size: 1.1rem; }
+      .community-section { padding: 36px 20px; }
     }
   </style>
 </head>
@@ -305,101 +544,289 @@
     <header>
       <a href="#" class="logo-container">
         <div class="logo-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
           </svg>
         </div>
         <span class="logo-text">Adventurers Harness</span>
       </a>
       <nav class="nav-links">
-        <a href="https://github.com/4cecoder/adventurers-harness">GitHub</a>
-        <a href="docs/harness-engineering-guide.md">Architecture Guide</a>
-        <a href="docs/meta-harness-dispatch.md">Meta Harness</a>
-        <a href="https://github.com/4cecoder/adventurers-harness/releases">Releases</a>
+        <a href="#gates">6-Gate Engine</a>
+        <a href="#meta-harness">Meta-Harness CLI</a>
+        <a href="ROADMAP.md">Roadmap</a>
+        <a href="https://github.com/4cecoder/adventurers-harness" target="_blank">GitHub</a>
+        <a href="https://github.com/4cecoder/adventurers-harness/releases/latest" class="nav-cta">Download DMG</a>
       </nav>
     </header>
 
     <section class="hero">
-      <div class="badge">
-        <span>⚡</span> Native macOS Apple Silicon • Swift 6 • Deterministic Gate Engine
+      <div class="badge-chip">
+        <span>⚡</span> Native macOS Apple Silicon • Swift 6 • Deterministic Gate Certification
       </div>
       <h1>The model proposes.<br>The harness certifies.</h1>
-      <p>
-        A native macOS coding agent harness built for Apple Silicon. Combining real-time sliding window telemetry, 6-gate deterministic verification, Darwin Seatbelt sandbox policies, and multi-agent meta-dispatch.
+      <p class="hero-lead">
+        A high-velocity macOS native coding agent harness. Engineered for Apple Silicon with Darwin Seatbelt kernel sandboxing, real-time sliding window TPS telemetry, and first-class subprocess dispatch for <strong>Google Antigravity (agy)</strong> and <strong>Claude Code</strong>.
       </p>
 
       <div class="cta-group">
-        <a href="https://github.com/4cecoder/adventurers-harness/releases/latest" class="btn btn-primary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Download DMG for macOS
+        <a href="https://github.com/4cecoder/adventurers-harness/releases/download/latest/Adventurers-macOS-arm64.dmg" class="btn btn-primary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download for macOS (ARM64 DMG)
         </a>
-        <a href="https://github.com/4cecoder/adventurers-harness" class="btn btn-secondary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
-          View on GitHub
+        <a href="https://github.com/4cecoder/adventurers-harness" target="_blank" class="btn btn-secondary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          Star on GitHub
         </a>
       </div>
 
-      <div class="terminal-card">
+      <!-- Interactive Multi-Tab Terminal Box -->
+      <div class="terminal-container">
         <div class="terminal-header">
-          <span class="dot dot-red"></span>
-          <span class="dot dot-yellow"></span>
-          <span class="dot dot-green"></span>
-          <span class="terminal-title">zsh — Homebrew Installation</span>
+          <div class="terminal-dots">
+            <span class="dot dot-red"></span>
+            <span class="dot dot-yellow"></span>
+            <span class="dot dot-green"></span>
+          </div>
+          <div class="terminal-tabs">
+            <button class="tab-btn active" onclick="switchTab('brew')">Homebrew Tap</button>
+            <button class="tab-btn" onclick="switchTab('dmg')">Direct DMG</button>
+            <button class="tab-btn" onclick="switchTab('source')">Build Source</button>
+          </div>
         </div>
-        <div class="terminal-body">
-          <p><span class="output"># Tap repository and install via Homebrew</span></p>
-          <p><span class="command">$</span> brew tap 4cecoder/adventurers https://github.com/4cecoder/adventurers-harness</p>
-          <p><span class="command">$</span> brew install adventurers</p>
-          <p><span class="output">==> Fetching adventurers...</span></p>
-          <p><span class="output">==> Installing Adventurers.app for macOS ARM64</span></p>
-          <p><span class="output">✔ Adventurers installed to /opt/homebrew/bin/adventurers</span></p>
-          <p><span class="command">$</span> adventurers</p>
+        <div class="terminal-body" id="terminalContent">
+          <button class="copy-btn" onclick="copyCommand()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="copyText">Copy</span>
+          </button>
+          <p><span class="comment-text"># Tap public repository & install binary to PATH</span></p>
+          <p><span class="prompt-sym">❯</span> <span class="cmd-text" id="activeCmd">brew tap 4cecoder/adventurers https://github.com/4cecoder/adventurers-harness && brew install adventurers</span></p>
+          <p class="success-text">✔ Adventurers.app installed to /opt/homebrew/bin/adventurers</p>
+          <p><span class="prompt-sym">❯</span> adventurers</p>
         </div>
       </div>
     </section>
 
-    <section class="grid">
-      <div class="feature-card">
-        <div class="card-icon">🛡️</div>
-        <h3>6-Gate Certification Engine</h3>
-        <p>Preflight code changes with Syntax, Repeat, Compilation, Diff, Memory, and Objective gates before executing commands or modifying files.</p>
+    <!-- 6-Gate Deterministic Certification Pipeline -->
+    <section class="gates-section" id="gates">
+      <div class="section-head">
+        <h2>Deterministic 6-Gate Certification Pipeline</h2>
+        <p>The model never decides completion. Every code suggestion must pass 6 non-bypassable preflight gates before disk commits.</p>
       </div>
 
-      <div class="feature-card">
-        <div class="card-icon">🔒</div>
-        <h3>Darwin Seatbelt Sandbox</h3>
-        <p>Kernel-enforced process isolation on macOS restricting file modifications to repository paths and guarding private developer credentials.</p>
+      <div class="gate-grid">
+        <div class="gate-card">
+          <div class="gate-card-header">
+            <div class="gate-icon-title">
+              <span class="gate-icon">🧩</span>
+              <span class="gate-name">SyntaxGate</span>
+            </div>
+            <span class="gate-status-pill">Active</span>
+          </div>
+          <p class="gate-desc">Extracts markdown code blocks and validates bracket, brace, and parenthesis parity with AST tokenization.</p>
+        </div>
+
+        <div class="gate-card">
+          <div class="gate-card-header">
+            <div class="gate-icon-title">
+              <span class="gate-icon">🔁</span>
+              <span class="gate-name">RepeatGate</span>
+            </div>
+            <span class="gate-status-pill">Active</span>
+          </div>
+          <p class="gate-desc">Intercepts hallucination loops and duplicate turn submissions via cryptographic MD5 turn hashing.</p>
+        </div>
+
+        <div class="gate-card">
+          <div class="gate-card-header">
+            <div class="gate-icon-title">
+              <span class="gate-icon">⚙️</span>
+              <span class="gate-name">CompilationGate</span>
+            </div>
+            <span class="gate-status-pill">Active</span>
+          </div>
+          <p class="gate-desc">Performs non-destructive Swift/Clang type-checking in isolated memory buffers prior to writing changes.</p>
+        </div>
+
+        <div class="gate-card">
+          <div class="gate-card-header">
+            <div class="gate-icon-title">
+              <span class="gate-icon">🛡️</span>
+              <span class="gate-name">DiffGate</span>
+            </div>
+            <span class="gate-status-pill">Active</span>
+          </div>
+          <p class="gate-desc">Inspects command risks, blocking destructive commands (<code>rm -rf</code>, <code>sudo</code>, <code>git push -f</code>) and fencing secrets.</p>
+        </div>
+
+        <div class="gate-card">
+          <div class="gate-card-header">
+            <div class="gate-icon-title">
+              <span class="gate-icon">🧠</span>
+              <span class="gate-name">MemoryGate</span>
+            </div>
+            <span class="gate-status-pill">Active</span>
+          </div>
+          <p class="gate-desc">POSIX <code>getrusage</code> resident memory monitor bounding task memory and preventing OOM leaks.</p>
+        </div>
+
+        <div class="gate-card">
+          <div class="gate-card-header">
+            <div class="gate-icon-title">
+              <span class="gate-icon">🎯</span>
+              <span class="gate-name">ObjectiveGate</span>
+            </div>
+            <span class="gate-status-pill">Active</span>
+          </div>
+          <p class="gate-desc">Validates immutable task contract completion, keyword satisfaction, and budget consumption limits.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Meta-Harness Multi-Agent Hub -->
+    <section class="meta-section" id="meta-harness">
+      <div class="section-head">
+        <h2>Meta-Harness CLI Subprocess Dispatch</h2>
+        <p>Run specialized sub-agent CLI binaries inside isolated subprocesses with distinct keyring scopes and streaming telemetry.</p>
       </div>
 
-      <div class="feature-card">
-        <div class="card-icon">🔀</div>
-        <h3>Multi-Agent Meta-Dispatch</h3>
-        <p>Seamlessly orchestrate external sub-agent CLIs (Codex, Hermes, OpenCode, DeepSeek, Pi, SmallCTL) via clean process streams with isolated API keys.</p>
-      </div>
+      <div class="meta-grid">
+        <div class="meta-card">
+          <div class="meta-badge">Google Antigravity</div>
+          <h3>Antigravity CLI (agy)</h3>
+          <p>Multi-agent swarms, artifacts, skill execution, and subagent orchestration.</p>
+          <span class="meta-cli-chip">agy -p 'prompt'</span>
+        </div>
 
-      <div class="feature-card">
-        <div class="card-icon">📊</div>
-        <h3>Real-Time TPS Telemetry</h3>
-        <p>1.2s rolling sliding window token velocity, TTFT latency tracking, context headroom indicators, and multi-model cost ledger accounting.</p>
-      </div>
+        <div class="meta-card">
+          <div class="meta-badge">Anthropic</div>
+          <h3>Claude Code (claude)</h3>
+          <p>Interactive agent loops, fast codebase traversal, subagents, and git integration.</p>
+          <span class="meta-cli-chip">claude -p 'prompt'</span>
+        </div>
 
-      <div class="feature-card">
-        <div class="card-icon">🔄</div>
-        <h3>GitHub In-App Updates</h3>
-        <p>Automatic update detection against GitHub Releases with rendered Markdown release notes, download progress, and 1-click DMG installation.</p>
-      </div>
+        <div class="meta-card">
+          <div class="meta-badge">OpenAI</div>
+          <h3>Codex CLI</h3>
+          <p>Rust-based gate-certified execution engine with deterministic contracts.</p>
+          <span class="meta-cli-chip">codex 'prompt'</span>
+        </div>
 
-      <div class="feature-card">
-        <div class="card-icon">⚡</div>
-        <h3>Swift 6 Native Architecture</h3>
-        <p>Obsidian Glass Liquid UI with 60 FPS streaming, three-panel navigation, interactive Diff reviewer, and zero Electron bloat.</p>
+        <div class="meta-card">
+          <div class="meta-badge">Nous Research</div>
+          <h3>Hermes Agent</h3>
+          <p>Staged reflection with persistent episodic memory and trajectory learning.</p>
+          <span class="meta-cli-chip">hermes -p 'prompt'</span>
+        </div>
+
+        <div class="meta-card">
+          <div class="meta-badge">OpenCode</div>
+          <h3>OpenCode CLI</h3>
+          <p>Go-based multi-provider agent with SQLite session state and AST validation.</p>
+          <span class="meta-cli-chip">opencode 'prompt'</span>
+        </div>
+
+        <div class="meta-card">
+          <div class="meta-badge">DeepSeek</div>
+          <h3>DeepSeek Harness (dsh)</h3>
+          <p>Plugin-everything modular harness designed for frontier DeepSeek R1 models.</p>
+          <span class="meta-cli-chip">dsh 'prompt'</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Community & Onboarding Hub -->
+    <section class="community-section">
+      <h2>Join the Adventurers Community</h2>
+      <p style="color: var(--text-muted); max-width: 600px; margin: 10px auto 0;">
+        Adventurers Harness is 100% open-source under the MIT license. Explore the roadmap, build custom gate plugins, or contribute new tools.
+      </p>
+
+      <div class="community-grid">
+        <a href="https://github.com/4cecoder/adventurers-harness" target="_blank" class="community-card">
+          <h4>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+            GitHub Repository
+          </h4>
+          <p>Source code, issue tracking, and Apple Silicon CI/CD workflows.</p>
+        </a>
+
+        <a href="ROADMAP.md" class="community-card">
+          <h4>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
+            Microtasks Roadmap
+          </h4>
+          <p>Phases 1-5 with 50+ granular microtasks and test assertions.</p>
+        </a>
+
+        <a href="docs/harness-engineering-guide.md" class="community-card">
+          <h4>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            Architecture Guide
+          </h4>
+          <p>Deterministic gates, Darwin sandboxing, and FailChain design.</p>
+        </a>
+
+        <a href="https://github.com/4cecoder/adventurers-harness/issues" target="_blank" class="community-card">
+          <h4>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Feature Requests & Issues
+          </h4>
+          <p>Propose custom gates, report bugs, or request model providers.</p>
+        </a>
       </div>
     </section>
 
     <footer>
-      <p>Adventurers Harness • Built with Swift 6 on Apple Silicon • <a href="https://github.com/4cecoder/adventurers-harness">GitHub Repository</a></p>
+      <p>Adventurers Harness • Built in Swift 6 for macOS Apple Silicon • Released under the MIT License</p>
+      <p style="margin-top: 8px;"><a href="https://github.com/4cecoder/adventurers-harness">github.com/4cecoder/adventurers-harness</a></p>
     </footer>
   </div>
 
+  <script>
+    const commands = {
+      brew: {
+        comment: "# Tap public repository & install binary to PATH",
+        cmd: "brew tap 4cecoder/adventurers https://github.com/4cecoder/adventurers-harness && brew install adventurers",
+        output: "✔ Adventurers.app installed to /opt/homebrew/bin/adventurers"
+      },
+      dmg: {
+        comment: "# Download standalone disk image installer via curl",
+        cmd: "curl -LO https://github.com/4cecoder/adventurers-harness/releases/download/latest/Adventurers-macOS-arm64.dmg",
+        output: "✔ Adventurers-macOS-arm64.dmg ready in current directory"
+      },
+      source: {
+        comment: "# Clone and build natively with Swift 6",
+        cmd: "git clone https://github.com/4cecoder/adventurers-harness.git && cd adventurers-harness && swift run Adventurers",
+        output: "✔ Adventurers running locally on Apple Silicon"
+      }
+    };
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      const data = commands[tab];
+      const html = `
+        <button class="copy-btn" onclick="copyCommand()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span id="copyText">Copy</span>
+        </button>
+        <p><span class="comment-text">${data.comment}</span></p>
+        <p><span class="prompt-sym">❯</span> <span class="cmd-text" id="activeCmd">${data.cmd}</span></p>
+        <p class="success-text">${data.output}</p>
+        <p><span class="prompt-sym">❯</span> adventurers</p>
+      `;
+      document.getElementById('terminalContent').innerHTML = html;
+    }
+
+    function copyCommand() {
+      const text = document.getElementById('activeCmd').innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const copyLabel = document.getElementById('copyText');
+        copyLabel.innerText = "Copied!";
+        setTimeout(() => { copyLabel.innerText = "Copy"; }, 2000);
+      });
+    }
+  </script>
 </body>
 </html>
