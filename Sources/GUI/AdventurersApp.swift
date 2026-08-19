@@ -1280,6 +1280,33 @@ struct AgentCommands: Commands {
             }
             .keyboardShortcut("4", modifiers: .command)
         }
+
+        CommandMenu("Run") {
+            Button("Pause / Resume Execution") {
+                if let selectedID = appState.selectedThreadID,
+                   let vm = appState.threadViewModels[selectedID] {
+                    vm.togglePause(terminalManager: appState.terminalManager)
+                }
+            }
+            .keyboardShortcut(.space, modifiers: [.option])
+
+            Button("Stop Active Run") {
+                if let selectedID = appState.selectedThreadID,
+                   let vm = appState.threadViewModels[selectedID] {
+                    vm.stopRun(terminalManager: appState.terminalManager)
+                }
+            }
+            .keyboardShortcut(".", modifiers: [.command])
+
+            Divider()
+
+            Button("Clear Queued Prompts") {
+                if let selectedID = appState.selectedThreadID,
+                   let vm = appState.threadViewModels[selectedID] {
+                    vm.clearQueuedPrompts()
+                }
+            }
+        }
     }
 }
 

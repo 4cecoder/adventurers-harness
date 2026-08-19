@@ -8,15 +8,19 @@ import SwiftUI
 /// Status of an agent thread with associated SF Symbol and color.
 public enum ThreadStatus: String, Sendable, CaseIterable, Codable {
     case running
+    case paused
     case completed
     case failed
+    case stopped
 
     /// SF Symbol name for this status.
     public var symbolName: String {
         switch self {
         case .running:   "arrow.triangle.2.circlepath"
+        case .paused:    "pause.circle.fill"
         case .completed: "checkmark.circle.fill"
         case .failed:    "xmark.circle.fill"
+        case .stopped:   "stop.circle.fill"
         }
     }
 
@@ -24,8 +28,10 @@ public enum ThreadStatus: String, Sendable, CaseIterable, Codable {
     public var color: Color {
         switch self {
         case .running:   .adOrange
+        case .paused:    .adWarning
         case .completed: .adSuccess
         case .failed:    .adError
+        case .stopped:   .adTextTertiary
         }
     }
 
@@ -33,8 +39,10 @@ public enum ThreadStatus: String, Sendable, CaseIterable, Codable {
     public var label: String {
         switch self {
         case .running:   "Running"
+        case .paused:    "Paused"
         case .completed: "Completed"
         case .failed:    "Failed"
+        case .stopped:   "Stopped"
         }
     }
 }

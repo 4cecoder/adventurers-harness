@@ -91,10 +91,24 @@ public struct ThreadToolResult: Identifiable, Sendable {
     }
 }
 
+// MARK: - Queued Prompt Model
+
+public struct QueuedPrompt: Identifiable, Sendable, Equatable {
+    public let id: String
+    public var text: String
+    public let timestamp: Date
+
+    public init(id: String = UUID().uuidString, text: String, timestamp: Date = Date()) {
+        self.id = id
+        self.text = text
+        self.timestamp = timestamp
+    }
+}
+
 // MARK: - Thread ViewModel
 
 /// The observable state for the entire thread view.
-/// Manages messages, gate progress, streaming state, and input.
+/// Manages messages, gate progress, streaming state, pause/queue controls, and input.
 @MainActor
 public final class ThreadViewModel: ObservableObject {
     @Published public var messages: [ThreadMessage] = []
@@ -102,6 +116,8 @@ public final class ThreadViewModel: ObservableObject {
     @Published public var inputText: String = ""
     @Published public var selectedModel: String = "gpt-4o"
     @Published public var isGenerating: Bool = false
+    @Published public var isPaused: Bool = false
+    @Published public var queuedPrompts: [QueuedPrompt] = []
     @Published public var isLoadingSkeleton: Bool = true
     @Published public var availableModels: [String] = [
         "gpt-4o",
@@ -115,6 +131,7 @@ public final class ThreadViewModel: ObservableObject {
     public var threadID: UUID?
     public var onMessagesChanged: (([ThreadMessage]) -> Void)?
     public let meteringState = ThreadMeteringState()
+    public var activeGenerationTask: Task<Void, Never>? = nil
 
     public init(threadID: UUID? = nil) {
         self.threadID = threadID
@@ -131,6 +148,62 @@ public final class ThreadViewModel: ObservableObject {
         } else {
             loadPlaceholderMessages()
             meteringState.recalculateContext(messages: self.messages)
+        }
+    }
+
+    // MARK: - Execution Controls (Pause, Resume, Stop, Queue)
+
+    public func pauseRun(terminalManager: TerminalManager? = nil) {
+        guard isGenerating, !isPaused else { return }
+        isPaused = true
+        terminalManager?.logCommand("[Execution Paused] Thread suspended. Click Resume or press ⌥Space to continue.")
+    }
+
+    public func resumeRun(terminalManager: TerminalManager? = nil) {
+        guard isGenerating, isPaused else { return }
+        isPaused = false
+        terminalManager?.logCommand("[Execution Resumed] Continuing agent loop.")
+    }
+
+    public func togglePause(terminalManager: TerminalManager? = nil) {
+        if isPaused {
+            resumeRun(terminalManager: terminalManager)
+        } else {
+            pauseRun(terminalManager: terminalManager)
+        }
+    }
+
+    public func stopRun(terminalManager: TerminalManager? = nil) {
+        guard isGenerating || !queuedPrompts.isEmpty else { return }
+        activeGenerationTask?.cancel()
+        activeGenerationTask = nil
+        isGenerating = false
+        isPaused = false
+        if let msgID = lastStreamingMessageID {
+            finishStreaming(messageID: msgID)
+        }
+        terminalManager?.logError("[Execution Stopped] Agent run aborted by user.")
+    }
+
+    public func queuePrompt(_ text: String, terminalManager: TerminalManager? = nil) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        queuedPrompts.append(QueuedPrompt(text: trimmed))
+        inputText = ""
+        terminalManager?.logCommand("[Prompt Queued (#\(queuedPrompts.count))] \"\(trimmed.prefix(60))...\"")
+    }
+
+    public func removeQueuedPrompt(id: String) {
+        queuedPrompts.removeAll(where: { $0.id == id })
+    }
+
+    public func clearQueuedPrompts() {
+        queuedPrompts.removeAll()
+    }
+
+    public func checkPauseState() async {
+        while isPaused && !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(120))
         }
     }
 
@@ -224,12 +297,18 @@ public final class ThreadViewModel: ObservableObject {
         diffState: DiffViewerState? = nil
     ) {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isGenerating else { return }
+        guard !text.isEmpty else { return }
+
+        if isGenerating {
+            queuePrompt(text, terminalManager: terminalManager)
+            return
+        }
 
         let userMessage = ThreadMessage(role: .user, content: text)
         appendMessage(userMessage)
         inputText = ""
         isGenerating = true
+        isPaused = false
         resetGates()
 
         // Handle Meta-Harness Mode (Sub-Agent External CLI dispatch)
@@ -239,7 +318,7 @@ public final class ThreadViewModel: ObservableObject {
 
             terminalManager?.logCommand("[Meta Harness Dispatch] Target: \(selectedHarness.rawValue) | Binary: \(profile.binaryPath)")
 
-            Task {
+            self.activeGenerationTask = Task {
                 let agentMessageID = UUID().uuidString
                 let placeholder = ThreadMessage(
                     id: agentMessageID,
@@ -259,6 +338,14 @@ public final class ThreadViewModel: ObservableObject {
                 let workspace = FileManager.default.currentDirectoryPath
 
                 do {
+                    await self.checkPauseState()
+                    guard !Task.isCancelled else {
+                        self.finishStreaming(messageID: agentMessageID)
+                        self.isGenerating = false
+                        self.isPaused = false
+                        return
+                    }
+
                     let exitCode = try await MetaHarnessRunner.shared.executeHarness(
                         profile: profile,
                         prompt: text,
@@ -280,12 +367,19 @@ public final class ThreadViewModel: ObservableObject {
                     await self.certifyOutput(content: accumulatedOutput, prompt: text, terminalManager: terminalManager)
                     self.meteringState.finishTurn(toolCallsCount: 0, gatesPassedCount: 6)
                     self.isGenerating = false
+                    self.isPaused = false
+                    self.activeGenerationTask = nil
                     terminalManager?.logOutput("Process exited with code \(exitCode)")
+
+                    // Process next queued prompt if available
+                    self.processNextQueuedPrompt(settings: settings, terminalManager: terminalManager, diffState: diffState)
                 } catch {
                     let errStr = "Error executing Meta Harness '\(profile.binaryPath)': \(error.localizedDescription)\nEnsure the binary is installed or update the path in Settings → Meta Harness CLIs."
                     self.updateMessage(id: agentMessageID, content: errStr)
                     self.finishStreaming(messageID: agentMessageID)
                     self.isGenerating = false
+                    self.isPaused = false
+                    self.activeGenerationTask = nil
                     terminalManager?.logError(errStr)
                 }
             }
@@ -308,7 +402,7 @@ public final class ThreadViewModel: ObservableObject {
         }
         let model = settings?.selectedModel ?? selectedModel
 
-        Task {
+        self.activeGenerationTask = Task {
             let provider = UniversalCloudProvider(
                 name: providerType.rawValue,
                 apiKey: apiKey,
@@ -373,7 +467,10 @@ public final class ThreadViewModel: ObservableObject {
 
             terminalManager?.logCommand("[Agent Dispatch] Provider: \(providerType.rawValue) | Model: \(model)")
 
-            while maxTurns > 0 {
+            while maxTurns > 0 && !Task.isCancelled {
+                await self.checkPauseState()
+                guard !Task.isCancelled else { break }
+
                 maxTurns -= 1
                 let agentMessageID = UUID().uuidString
                 let placeholder = ThreadMessage(
@@ -390,6 +487,9 @@ public final class ThreadViewModel: ObservableObject {
                 do {
                     let stream = provider.stream(messages: llmMessages, config: config)
                     for try await chunk in stream {
+                        await self.checkPauseState()
+                        guard !Task.isCancelled else { break }
+
                         if let reasoning = chunk.reasoningDelta, !reasoning.isEmpty {
                             accumulatedReasoning += reasoning
                         }
@@ -414,6 +514,8 @@ public final class ThreadViewModel: ObservableObject {
                     finalContent = accumulatedContent
                     terminalManager?.logOutput("[Agent Output] \(accumulatedContent.count) bytes received.")
 
+                    if Task.isCancelled { break }
+
                     // Check for tool calls
                     let toolInvocations = self.extractToolCalls(from: accumulatedContent)
                     if toolInvocations.isEmpty {
@@ -428,6 +530,9 @@ public final class ThreadViewModel: ObservableObject {
                     var threadToolResults: [ThreadToolResult] = []
 
                     for inv in toolInvocations {
+                        await self.checkPauseState()
+                        guard !Task.isCancelled else { break }
+
                         terminalManager?.logCommand("[Tool Execution] \(inv.name) -> \(inv.argumentsSummary)")
                         let tcID = UUID().uuidString
                         let trID = UUID().uuidString
@@ -479,22 +584,42 @@ public final class ThreadViewModel: ObservableObject {
                 }
             }
 
-            // Run Deterministic Certification Gates Pipeline
-            let passedGatesCount = await self.certifyOutput(
-                content: finalContent,
-                prompt: text,
-                terminalManager: terminalManager
-            )
+            if !Task.isCancelled {
+                // Run Deterministic Certification Gates Pipeline
+                let passedGatesCount = await self.certifyOutput(
+                    content: finalContent,
+                    prompt: text,
+                    terminalManager: terminalManager
+                )
 
-            // Finalize Turn Telemetry & Context Window Recalculation
-            self.meteringState.finishTurn(
-                toolCallsCount: totalToolsExecuted,
-                gatesPassedCount: passedGatesCount
-            )
-            self.meteringState.recalculateContext(messages: self.messages)
+                // Finalize Turn Telemetry & Context Window Recalculation
+                self.meteringState.finishTurn(
+                    toolCallsCount: totalToolsExecuted,
+                    gatesPassedCount: passedGatesCount
+                )
+                self.meteringState.recalculateContext(messages: self.messages)
+            }
 
             self.isGenerating = false
+            self.isPaused = false
+            self.activeGenerationTask = nil
+
+            // Process next queued prompt if any
+            if !Task.isCancelled {
+                self.processNextQueuedPrompt(settings: settings, terminalManager: terminalManager, diffState: diffState)
+            }
         }
+    }
+
+    public func processNextQueuedPrompt(
+        settings: SettingsModel? = nil,
+        terminalManager: TerminalManager? = nil,
+        diffState: DiffViewerState? = nil
+    ) {
+        guard !isGenerating, !queuedPrompts.isEmpty else { return }
+        let next = queuedPrompts.removeFirst()
+        inputText = next.text
+        sendMessage(settings: settings, terminalManager: terminalManager, diffState: diffState)
     }
 
     private let toolExecutor = ThreadToolExecutor()
@@ -611,6 +736,8 @@ public struct ThreadView: View {
                 ),
                 availableModels: appState?.settingsModel.modelsForActiveProvider() ?? threadVM.availableModels,
                 isGenerating: threadVM.isGenerating,
+                isPaused: threadVM.isPaused,
+                queuedPrompts: threadVM.queuedPrompts,
                 onSend: {
                     let diffState = appState?.selectedThreadID.flatMap { appState?.diffStates[$0] }
                     threadVM.sendMessage(
@@ -618,6 +745,21 @@ public struct ThreadView: View {
                         terminalManager: appState?.terminalManager,
                         diffState: diffState
                     )
+                },
+                onPauseToggle: {
+                    threadVM.togglePause(terminalManager: appState?.terminalManager)
+                },
+                onStop: {
+                    threadVM.stopRun(terminalManager: appState?.terminalManager)
+                },
+                onQueue: { prompt in
+                    threadVM.queuePrompt(prompt, terminalManager: appState?.terminalManager)
+                },
+                onRemoveQueueItem: { id in
+                    threadVM.removeQueuedPrompt(id: id)
+                },
+                onClearQueue: {
+                    threadVM.clearQueuedPrompts()
                 },
                 onClear: { threadVM.clearThread() }
             )
@@ -1704,7 +1846,7 @@ class InnerTextView: NSTextView {
 
 // MARK: - MessageInputBar
 
-/// Bottom liquid glass input bar: native text editor, attachment button, model selector, and glowing send button.
+/// Bottom liquid glass input bar: native text editor, attachment button, model selector, pause/resume, queue drawer, and glowing send button.
 public struct MessageInputBar: View {
     @Binding public var text: String
     @Binding public var selectedModel: String
@@ -1712,11 +1854,20 @@ public struct MessageInputBar: View {
     @Binding public var selectedMetaHarness: MetaHarnessType
     public let availableModels: [String]
     public let isGenerating: Bool
+    public let isPaused: Bool
+    public let queuedPrompts: [QueuedPrompt]
     public let onSend: () -> Void
+    public let onPauseToggle: () -> Void
+    public let onStop: () -> Void
+    public let onQueue: (String) -> Void
+    public let onRemoveQueueItem: (String) -> Void
+    public let onClearQueue: () -> Void
     public let onClear: () -> Void
 
     @State private var showingModelPicker = false
     @State private var hoverSend = false
+    @State private var hoverStop = false
+    @State private var hoverPause = false
 
     public init(
         text: Binding<String>,
@@ -1725,7 +1876,14 @@ public struct MessageInputBar: View {
         selectedMetaHarness: Binding<MetaHarnessType> = .constant(.codex),
         availableModels: [String] = ["gpt-4o"],
         isGenerating: Bool = false,
+        isPaused: Bool = false,
+        queuedPrompts: [QueuedPrompt] = [],
         onSend: @escaping () -> Void = {},
+        onPauseToggle: @escaping () -> Void = {},
+        onStop: @escaping () -> Void = {},
+        onQueue: @escaping (String) -> Void = { _ in },
+        onRemoveQueueItem: @escaping (String) -> Void = { _ in },
+        onClearQueue: @escaping () -> Void = {},
         onClear: @escaping () -> Void = {}
     ) {
         self._text = text
@@ -1734,12 +1892,25 @@ public struct MessageInputBar: View {
         self._selectedMetaHarness = selectedMetaHarness
         self.availableModels = availableModels
         self.isGenerating = isGenerating
+        self.isPaused = isPaused
+        self.queuedPrompts = queuedPrompts
         self.onSend = onSend
+        self.onPauseToggle = onPauseToggle
+        self.onStop = onStop
+        self.onQueue = onQueue
+        self.onRemoveQueueItem = onRemoveQueueItem
+        self.onClearQueue = onClearQueue
         self.onClear = onClear
     }
 
     public var body: some View {
         VStack(spacing: 6) {
+            // Floating Queued Prompts Drawer
+            if !queuedPrompts.isEmpty {
+                queuedPromptsDrawer
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             HStack(alignment: .center, spacing: 8) {
                 // Execution Mode & Harness Switcher
                 modeAndHarnessSelector
@@ -1752,8 +1923,17 @@ public struct MessageInputBar: View {
                 // Native Glass Text input
                 textEditor
 
-                // Send / stop button
-                sendButton
+                // Execution Controls (Pause, Stop, Send / Queue)
+                if isGenerating {
+                    // Pause / Resume Button
+                    pauseButton
+
+                    // Stop Button
+                    stopButton
+                }
+
+                // Primary Send / Queue Action Button
+                primaryActionButton
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -1764,6 +1944,173 @@ public struct MessageInputBar: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
         .background(Color.clear)
+        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: queuedPrompts.count)
+        .animation(.easeInOut(duration: 0.2), value: isGenerating)
+        .animation(.easeInOut(duration: 0.2), value: isPaused)
+    }
+
+    // MARK: - Queued Prompts Drawer
+
+    @ViewBuilder
+    private var queuedPromptsDrawer: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 5) {
+                Image(systemName: "list.bullet.clipboard.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adInfo)
+                Text("Queue (\(queuedPrompts.count))")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.adInfo)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.adInfo.opacity(0.15))
+            .clipShape(Capsule())
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(queuedPrompts) { item in
+                        HStack(spacing: 6) {
+                            Text(item.text)
+                                .font(.system(size: 11))
+                                .lineLimit(1)
+                                .foregroundStyle(Color.adTextPrimary)
+
+                            Button {
+                                onRemoveQueueItem(item.id)
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(Color.adTextTertiary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.adElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.12), lineWidth: 1))
+                    }
+                }
+            }
+
+            Spacer()
+
+            Button("Clear All") {
+                onClearQueue()
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Color.adTextTertiary)
+            .buttonStyle(.plain)
+            .padding(.trailing, 4)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.adCard.opacity(0.85))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adInfo.opacity(0.25), lineWidth: 1))
+    }
+
+    // MARK: - Pause Button
+
+    @ViewBuilder
+    private var pauseButton: some View {
+        Button(action: onPauseToggle) {
+            ZStack {
+                Circle()
+                    .fill(isPaused ? Color.adSuccess.opacity(0.2) : Color.adWarning.opacity(0.15))
+                    .frame(width: 30, height: 30)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(isPaused ? Color.adSuccess : Color.adWarning.opacity(0.6), lineWidth: 1)
+                    )
+                Image(systemName: isPaused ? "play.fill" : "pause.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(isPaused ? Color.adSuccess : Color.adWarning)
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hoverPause = $0 }
+        .help(isPaused ? "Resume execution (⌥Space)" : "Pause execution (⌥Space)")
+    }
+
+    // MARK: - Stop Button
+
+    @ViewBuilder
+    private var stopButton: some View {
+        Button(action: onStop) {
+            ZStack {
+                Circle()
+                    .fill(Color.adError.opacity(0.2))
+                    .frame(width: 30, height: 30)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(Color.adError.opacity(0.7), lineWidth: 1)
+                    )
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.adError)
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hoverStop = $0 }
+        .help("Stop current run (⌘.)")
+    }
+
+    // MARK: - Primary Action Button (Send / Queue)
+
+    @ViewBuilder
+    private var primaryActionButton: some View {
+        if isGenerating && canSend {
+            // When user types while generating, allow Queuing prompt
+            Button(action: {
+                onQueue(text)
+            }) {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.down.to.line.compact")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("Queue")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color.adInfo)
+                .foregroundStyle(Color.black)
+                .clipShape(Capsule())
+                .shadow(color: Color.adInfo.opacity(0.4), radius: 6)
+            }
+            .buttonStyle(.plain)
+            .help("Add prompt to queue for sequential execution")
+        } else if !isGenerating {
+            Button(action: onSend) {
+                ZStack {
+                    Circle()
+                        .fill(sendButtonBackground)
+                        .frame(width: 32, height: 32)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.4), Color.white.opacity(0.1)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(color: canSend ? Color.adOrange.opacity(0.45) : .clear, radius: 8)
+
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(sendButtonForeground)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .opacity(canSend ? 1.0 : 0.35)
+            .onHover { hoverSend = $0 }
+            .help("Send message (Return)")
+        }
     }
 
     // MARK: - Mode & Harness Selector
@@ -1849,60 +2196,24 @@ public struct MessageInputBar: View {
         #if os(macOS)
         NativeGlassTextView(
             text: $text,
-            placeholder: "Message the agent...",
+            placeholder: isGenerating ? "Queue next prompt..." : "Message the agent...",
             onCommit: {
-                if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isGenerating {
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                if isGenerating {
+                    onQueue(trimmed)
+                } else {
                     onSend()
                 }
             }
         )
         .frame(minHeight: 28, maxHeight: 110)
         #else
-        TextField("Message the agent...", text: $text, axis: .vertical)
+        TextField(isGenerating ? "Queue next prompt..." : "Message the agent...", text: $text, axis: .vertical)
             .font(.system(size: 13))
             .textFieldStyle(.plain)
             .lineLimit(1...6)
         #endif
-    }
-
-    // MARK: - Send Button
-
-    @ViewBuilder
-    private var sendButton: some View {
-        Button(action: {
-            if isGenerating {
-                // Stop generation
-            } else {
-                onSend()
-            }
-        }) {
-            ZStack {
-                Circle()
-                    .fill(sendButtonBackground)
-                    .frame(width: 32, height: 32)
-                    .overlay(
-                        Circle()
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.4), Color.white.opacity(0.1)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    )
-                    .shadow(color: canSend ? Color.adOrange.opacity(0.45) : .clear, radius: 8)
-
-                Image(systemName: isGenerating ? "stop.fill" : "arrow.up")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(sendButtonForeground)
-            }
-        }
-        .buttonStyle(.plain)
-        .disabled(!isGenerating && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        .opacity(canSend || isGenerating ? 1.0 : 0.35)
-        .onHover { hoverSend = $0 }
-        .help(isGenerating ? "Stop generating" : "Send message (Return)")
     }
 
     private var canSend: Bool {
@@ -1910,12 +2221,10 @@ public struct MessageInputBar: View {
     }
 
     private var sendButtonForeground: Color {
-        if isGenerating { return .white }
         return (canSend || hoverSend) ? .white : Color.adTextTertiary
     }
 
     private var sendButtonBackground: Color {
-        if isGenerating { return Color.adError }
         return (canSend || hoverSend) ? Color.adOrange : Color.adElevated
     }
 
