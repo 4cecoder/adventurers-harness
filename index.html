@@ -28,6 +28,7 @@
       --code-bg: #030712;
       --success: #10B981;
       --error: #EF4444;
+      --section-gap: 112px;
     }
 
     * {
@@ -42,11 +43,49 @@
       color: var(--text-main);
       line-height: 1.6;
       overflow-x: hidden;
-      background-image: 
+      background-image:
         radial-gradient(circle at 20% 0%, rgba(249, 115, 22, 0.12) 0px, transparent 45%),
         radial-gradient(circle at 80% 20%, rgba(56, 189, 248, 0.08) 0px, transparent 40%),
         radial-gradient(circle at 50% 70%, rgba(168, 85, 247, 0.06) 0px, transparent 50%),
-        radial-gradient(circle at 50% 100%, rgba(15, 23, 42, 0.6) 0px, transparent 100%);
+        radial-gradient(circle at 50% 100%, rgba(15, 23, 42, 0.6) 0px, transparent 100%),
+        linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+      background-size: auto, auto, auto, auto, 56px 56px, 56px 56px;
+      background-position: 0 0, 0 0, 0 0, 0 0, -1px -1px, -1px -1px;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .reveal {
+        opacity: 0;
+        transform: translateY(22px);
+        transition: opacity 0.6s ease, transform 0.6s ease;
+      }
+
+      .reveal.reveal-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .section-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--eyebrow-color, var(--primary));
+      margin-bottom: 14px;
+    }
+
+    .section-eyebrow::before {
+      content: '';
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--eyebrow-color, var(--primary));
+      box-shadow: 0 0 8px var(--eyebrow-color, var(--primary));
     }
 
     .container {
@@ -148,7 +187,7 @@
     .badge-chip {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       padding: 6px 16px;
       background: rgba(249, 115, 22, 0.1);
       border: 1px solid rgba(249, 115, 22, 0.3);
@@ -158,6 +197,26 @@
       color: var(--primary);
       margin-bottom: 28px;
       letter-spacing: 0.02em;
+    }
+
+    .badge-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--primary);
+      box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.6);
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .badge-dot {
+        animation: pulse-ring 2.2s ease-out infinite;
+      }
+    }
+
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.55); }
+      70% { box-shadow: 0 0 0 7px rgba(249, 115, 22, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
     }
 
     h1 {
@@ -347,76 +406,93 @@
       margin: 0 auto;
     }
 
-    /* Interactive 6-Gate Visualizer */
+    /* Deterministic 6-Gate Pipeline */
     .gates-section {
-      margin-bottom: 100px;
+      margin-bottom: var(--section-gap);
     }
 
-    .gate-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-      gap: 20px;
+    .gate-pipeline {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
     }
 
-    .gate-card {
+    .gate-node {
+      flex: 1;
+      min-width: 0;
       background: var(--bg-card);
       border: 1px solid var(--border-color);
+      border-top: 3px solid var(--gate-color, var(--primary));
       border-radius: 14px;
-      padding: 24px;
+      padding: 22px 18px;
       backdrop-filter: blur(12px);
       transition: all 0.25s ease;
-      cursor: pointer;
       position: relative;
     }
 
-    .gate-card:hover, .gate-card.active {
-      border-color: var(--border-hover);
-      transform: translateY(-3px);
-      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5);
+    .gate-node:hover {
+      border-color: var(--gate-color, var(--primary));
+      transform: translateY(-4px);
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5);
     }
 
-    .gate-card-header {
+    .gate-node-top {
       display: flex;
       align-items: center;
       justify-content: space-between;
       margin-bottom: 12px;
     }
 
-    .gate-icon-title {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    .gate-index {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--gate-color, var(--primary));
+      letter-spacing: 0.05em;
     }
 
     .gate-icon {
-      font-size: 1.4rem;
+      font-size: 1.3rem;
     }
 
     .gate-name {
-      font-size: 1.1rem;
+      display: block;
+      font-size: 1.02rem;
       font-weight: 700;
       letter-spacing: -0.02em;
-    }
-
-    .gate-status-pill {
-      font-size: 0.72rem;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 9999px;
-      background: rgba(16, 185, 129, 0.15);
-      color: var(--success);
-      border: 1px solid rgba(16, 185, 129, 0.3);
+      margin-bottom: 8px;
     }
 
     .gate-desc {
-      font-size: 0.88rem;
+      font-size: 0.84rem;
       color: var(--text-muted);
       line-height: 1.5;
     }
 
+    .gate-connector {
+      flex-shrink: 0;
+      width: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-dim);
+    }
+
+    @media (max-width: 900px) {
+      .gate-pipeline {
+        flex-direction: column;
+      }
+
+      .gate-connector {
+        width: auto;
+        height: 30px;
+        transform: rotate(90deg);
+      }
+    }
+
     /* Meta-Harness Matrix */
     .meta-section {
-      margin-bottom: 100px;
+      margin-bottom: var(--section-gap);
     }
 
     .meta-grid {
@@ -477,7 +553,7 @@
 
     /* Onboarding & Community */
     .community-section {
-      margin-bottom: 100px;
+      margin-bottom: var(--section-gap);
       background: linear-gradient(180deg, rgba(18, 24, 38, 0.6) 0%, rgba(8, 10, 15, 0.9) 100%);
       border: 1px solid var(--border-color);
       border-radius: 20px;
@@ -624,7 +700,7 @@
 
     <section class="hero">
       <div class="badge-chip">
-        <span>⚡</span> Native macOS Apple Silicon • Swift 6 • Deterministic Gate Certification
+        <span class="badge-dot"></span> Native macOS Apple Silicon • Swift 6 • Deterministic Gate Certification
       </div>
       <h1>The model proposes.<br>The harness certifies.</h1>
       <p class="hero-lead">
@@ -671,75 +747,79 @@
 
     <!-- 6-Gate Deterministic Certification Pipeline -->
     <section class="gates-section" id="gates">
-      <div class="section-head">
+      <div class="section-head reveal">
+        <span class="section-eyebrow" style="--eyebrow-color: var(--primary)">// deterministic pipeline</span>
         <h2>Deterministic 6-Gate Certification Pipeline</h2>
         <p>The model never decides completion. Every code suggestion must pass 6 non-bypassable preflight gates before disk commits.</p>
       </div>
 
-      <div class="gate-grid">
-        <div class="gate-card">
-          <div class="gate-card-header">
-            <div class="gate-icon-title">
-              <span class="gate-icon">🧩</span>
-              <span class="gate-name">SyntaxGate</span>
-            </div>
-            <span class="gate-status-pill">Active</span>
+      <div class="gate-pipeline reveal">
+        <div class="gate-node" style="--gate-color: var(--primary)">
+          <div class="gate-node-top">
+            <span class="gate-index">01</span>
+            <span class="gate-icon">🧩</span>
           </div>
+          <span class="gate-name">SyntaxGate</span>
           <p class="gate-desc">Extracts markdown code blocks and validates bracket, brace, and parenthesis parity with AST tokenization.</p>
         </div>
+        <div class="gate-connector">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="14 6 20 12 14 18"/></svg>
+        </div>
 
-        <div class="gate-card">
-          <div class="gate-card-header">
-            <div class="gate-icon-title">
-              <span class="gate-icon">🔁</span>
-              <span class="gate-name">RepeatGate</span>
-            </div>
-            <span class="gate-status-pill">Active</span>
+        <div class="gate-node" style="--gate-color: var(--accent)">
+          <div class="gate-node-top">
+            <span class="gate-index">02</span>
+            <span class="gate-icon">🔁</span>
           </div>
+          <span class="gate-name">RepeatGate</span>
           <p class="gate-desc">Intercepts hallucination loops and duplicate turn submissions via cryptographic MD5 turn hashing.</p>
         </div>
+        <div class="gate-connector">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="14 6 20 12 14 18"/></svg>
+        </div>
 
-        <div class="gate-card">
-          <div class="gate-card-header">
-            <div class="gate-icon-title">
-              <span class="gate-icon">⚙️</span>
-              <span class="gate-name">CompilationGate</span>
-            </div>
-            <span class="gate-status-pill">Active</span>
+        <div class="gate-node" style="--gate-color: var(--purple)">
+          <div class="gate-node-top">
+            <span class="gate-index">03</span>
+            <span class="gate-icon">⚙️</span>
           </div>
+          <span class="gate-name">CompilationGate</span>
           <p class="gate-desc">Performs non-destructive Swift/Clang type-checking in isolated memory buffers prior to writing changes.</p>
         </div>
+        <div class="gate-connector">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="14 6 20 12 14 18"/></svg>
+        </div>
 
-        <div class="gate-card">
-          <div class="gate-card-header">
-            <div class="gate-icon-title">
-              <span class="gate-icon">🛡️</span>
-              <span class="gate-name">DiffGate</span>
-            </div>
-            <span class="gate-status-pill">Active</span>
+        <div class="gate-node" style="--gate-color: var(--success)">
+          <div class="gate-node-top">
+            <span class="gate-index">04</span>
+            <span class="gate-icon">🛡️</span>
           </div>
+          <span class="gate-name">DiffGate</span>
           <p class="gate-desc">Inspects command risks, blocking destructive commands (<code>rm -rf</code>, <code>sudo</code>, <code>git push -f</code>) and fencing secrets.</p>
         </div>
-
-        <div class="gate-card">
-          <div class="gate-card-header">
-            <div class="gate-icon-title">
-              <span class="gate-icon">🧠</span>
-              <span class="gate-name">MemoryGate</span>
-            </div>
-            <span class="gate-status-pill">Active</span>
-          </div>
-          <p class="gate-desc">POSIX <code>getrusage</code> resident memory monitor bounding task memory and preventing OOM leaks.</p>
+        <div class="gate-connector">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="14 6 20 12 14 18"/></svg>
         </div>
 
-        <div class="gate-card">
-          <div class="gate-card-header">
-            <div class="gate-icon-title">
-              <span class="gate-icon">🎯</span>
-              <span class="gate-name">ObjectiveGate</span>
-            </div>
-            <span class="gate-status-pill">Active</span>
+        <div class="gate-node" style="--gate-color: var(--primary)">
+          <div class="gate-node-top">
+            <span class="gate-index">05</span>
+            <span class="gate-icon">🧠</span>
           </div>
+          <span class="gate-name">MemoryGate</span>
+          <p class="gate-desc">POSIX <code>getrusage</code> resident memory monitor bounding task memory and preventing OOM leaks.</p>
+        </div>
+        <div class="gate-connector">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="14 6 20 12 14 18"/></svg>
+        </div>
+
+        <div class="gate-node" style="--gate-color: var(--accent)">
+          <div class="gate-node-top">
+            <span class="gate-index">06</span>
+            <span class="gate-icon">🎯</span>
+          </div>
+          <span class="gate-name">ObjectiveGate</span>
           <p class="gate-desc">Validates immutable task contract completion, keyword satisfaction, and budget consumption limits.</p>
         </div>
       </div>
@@ -747,12 +827,13 @@
 
     <!-- Meta-Harness Multi-Agent Hub -->
     <section class="meta-section" id="meta-harness">
-      <div class="section-head">
+      <div class="section-head reveal">
+        <span class="section-eyebrow" style="--eyebrow-color: var(--accent)">// multi-agent dispatch</span>
         <h2>Meta-Harness CLI Subprocess Dispatch</h2>
         <p>Run specialized sub-agent CLI binaries inside isolated subprocesses with distinct keyring scopes and streaming telemetry.</p>
       </div>
 
-      <div class="meta-grid">
+      <div class="meta-grid reveal">
         <div class="meta-card">
           <div class="meta-badge">Google Antigravity</div>
           <h3>Antigravity CLI (agy)</h3>
@@ -798,7 +879,8 @@
     </section>
 
     <!-- Community & Onboarding Hub -->
-    <section class="community-section">
+    <section class="community-section reveal">
+      <span class="section-eyebrow" style="--eyebrow-color: var(--purple)">// open source</span>
       <h2>Join the Adventurers Community</h2>
       <p style="color: var(--text-muted); max-width: 600px; margin: 10px auto 0;">
         Adventurers Harness is 100% open-source under the MIT license. Explore the roadmap, build custom gate plugins, or contribute new tools.
@@ -863,6 +945,21 @@
         output: "✔ Adventurers running locally on Apple Silicon"
       }
     };
+
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && 'IntersectionObserver' in window) {
+      const revealObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('reveal-visible');
+            revealObserver.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
+
+      document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+    } else {
+      document.querySelectorAll('.reveal').forEach(el => el.classList.add('reveal-visible'));
+    }
 
     function toggleNav() {
       const nav = document.getElementById('navLinks');
