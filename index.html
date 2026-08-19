@@ -114,16 +114,20 @@
 
     /* Header */
     header {
-      padding: 24px 0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
       border-bottom: 1px solid var(--border-color);
       backdrop-filter: blur(16px);
       position: sticky;
       top: 0;
       z-index: 100;
-      background: rgba(8, 10, 15, 0.8);
+      background: rgba(8, 10, 15, 0.85);
+    }
+
+    .header-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 18px;
+      padding-bottom: 18px;
     }
 
     .logo-container {
@@ -779,8 +783,8 @@
 </head>
 <body>
 
-  <div class="container">
-    <header>
+  <header>
+    <div class="container header-inner">
       <a href="#" class="logo-container">
         <div class="logo-icon">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
@@ -799,8 +803,10 @@
         <a href="https://github.com/4cecoder/adventurers-harness" target="_blank" rel="noopener">GitHub</a>
         <a href="https://github.com/4cecoder/adventurers-harness/releases/latest" class="nav-cta">Download DMG</a>
       </nav>
-    </header>
+    </div>
+  </header>
 
+  <div class="container">
     <section class="hero">
       <div class="badge-chip">
         <span class="badge-dot"></span> Native macOS Apple Silicon • Swift 6 • Deterministic Gate Certification
