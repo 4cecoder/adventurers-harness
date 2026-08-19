@@ -4,14 +4,14 @@
 import SwiftUI
 import AdventurersCore
 
-public struct CompactGateBar: View {
-    @ObservedObject public var state: GatePipelineState
-    @Binding public var isExpanded: Bool
-    public var workingDirectoryName: String = "workspace"
-    public var workingDirectory: String = ""
-    public var onChooseDirectory: (() -> Void)? = nil
+struct CompactGateBar: View {
+    @ObservedObject var state: GatePipelineState
+    @Binding var isExpanded: Bool
+    var workingDirectoryName: String = "workspace"
+    var workingDirectory: String = ""
+    var onChooseDirectory: (() -> Void)? = nil
 
-    public init(
+    init(
         state: GatePipelineState,
         isExpanded: Binding<Bool>,
         workingDirectoryName: String = "workspace",
