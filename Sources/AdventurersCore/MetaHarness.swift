@@ -315,10 +315,20 @@ public final class MetaHarnessRunner: Sendable {
         }
 
         try process.run()
-        process.waitUntilExit()
+        ActiveProcessRegistry.shared.register(process: process)
+        defer {
+            ActiveProcessRegistry.shared.unregister(process: process)
+            outHandle.readabilityHandler = nil
+            errHandle.readabilityHandler = nil
+        }
 
-        outHandle.readabilityHandler = nil
-        errHandle.readabilityHandler = nil
+        while process.isRunning {
+            if Task.isCancelled {
+                ActiveProcessRegistry.shared.killProcess(process)
+                break
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        }
 
         return Int(process.terminationStatus)
     }

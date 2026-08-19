@@ -187,7 +187,8 @@ public final class ThreadViewModel: ObservableObject {
         if let msgID = lastStreamingMessageID {
             finishStreaming(messageID: msgID)
         }
-        terminalManager?.logError("[Execution Stopped] Agent run aborted by user.")
+        ActiveProcessRegistry.shared.killAllProcesses()
+        terminalManager?.logError("[Execution Stopped] Agent run aborted by user. All active subprocesses (find, bash, tools) terminated.")
     }
 
     public func queuePrompt(_ text: String, terminalManager: TerminalManager? = nil) {

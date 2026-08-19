@@ -31,11 +31,16 @@ public struct BashTool: Tool {
             return ToolResult(output: "", error: "Missing 'command' argument")
         }
 
-        let timeout = (arguments["timeout"]?.unwrap() as? Int) ?? 30
+        let timeout = (arguments["timeout"]?.unwrap() as? Int) ?? 60
+        let cwd = arguments["cwd"]?.unwrap() as? String
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: shell)
         process.arguments = shellArgs + ["-c", command]
+
+        if let cwd = cwd, !cwd.isEmpty {
+            process.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        }
 
         let stdout = Pipe()
         let stderr = Pipe()
@@ -48,7 +53,29 @@ public struct BashTool: Tool {
             return ToolResult(output: "", error: "Failed to run command process: \(error.localizedDescription)")
         }
 
-        let finished = process.waitUntilExitOrTimeout(seconds: timeout)
+        ActiveProcessRegistry.shared.register(process: process)
+        defer {
+            ActiveProcessRegistry.shared.unregister(process: process)
+        }
+
+        // Asynchronously poll for process completion or cancellation
+        let deadline = Date().addingTimeInterval(Double(timeout))
+        var wasCancelled = false
+        var timedOut = false
+
+        while process.isRunning {
+            if Task.isCancelled {
+                wasCancelled = true
+                ActiveProcessRegistry.shared.killProcess(process)
+                break
+            }
+            if Date() >= deadline {
+                timedOut = true
+                ActiveProcessRegistry.shared.killProcess(process)
+                break
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        }
 
         let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
         let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
@@ -56,8 +83,10 @@ public struct BashTool: Tool {
         let stdoutStr = String(data: stdoutData, encoding: .utf8) ?? ""
         let stderrStr = String(data: stderrData, encoding: .utf8) ?? ""
 
-        if !finished {
-            process.terminate()
+        if wasCancelled {
+            return ToolResult(output: stdoutStr, error: "Command interrupted by user stop")
+        }
+        if timedOut {
             return ToolResult(output: stdoutStr, error: "Command timed out after \(timeout)s")
         }
 
@@ -71,15 +100,5 @@ public struct BashTool: Tool {
                 metadata: ["exitCode": "\(exitCode)"]
             )
         }
-    }
-}
-
-extension Process {
-    func waitUntilExitOrTimeout(seconds: Int) -> Bool {
-        let deadline = Date().addingTimeInterval(Double(seconds))
-        while isRunning && Date() < deadline {
-            RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.1))
-        }
-        return !isRunning
     }
 }
