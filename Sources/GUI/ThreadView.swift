@@ -2421,15 +2421,11 @@ public struct MessageInputBar: View {
                         .overlay(
                             Circle()
                                 .strokeBorder(
-                                    LinearGradient(
-                                        colors: [Color.white.opacity(0.4), Color.white.opacity(0.1)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
+                                    canSend ? Color.adOrange.opacity(0.6) : Color.white.opacity(0.08),
                                     lineWidth: 1
                                 )
                         )
-                        .shadow(color: canSend ? Color.adOrange.opacity(0.45) : .clear, radius: 8)
+                        .shadow(color: canSend ? Color.adOrange.opacity(0.35) : .clear, radius: 4)
 
                     Image(systemName: "arrow.up")
                         .font(.system(size: 13, weight: .bold))
@@ -2437,8 +2433,8 @@ public struct MessageInputBar: View {
                 }
             }
             .buttonStyle(.plain)
-            .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .opacity(canSend ? 1.0 : 0.35)
+            .disabled(!canSend)
+            .opacity(canSend ? 1.0 : 0.4)
             .onHover { hoverSend = $0 }
             .help("Send message (Return)")
         }
@@ -2552,7 +2548,7 @@ public struct MessageInputBar: View {
     }
 
     private var sendButtonForeground: Color {
-        return (canSend || hoverSend) ? .white : Color.adTextTertiary
+        return (canSend || hoverSend) ? Color.black : Color.adTextTertiary
     }
 
     private var sendButtonBackground: Color {
