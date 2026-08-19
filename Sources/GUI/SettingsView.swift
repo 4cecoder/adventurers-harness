@@ -269,6 +269,10 @@ public final class SettingsModel {
                 if let routerKey = providerKeys[ProviderType.openrouter.rawValue], !routerKey.isEmpty {
                     metaHarnessProfiles[idx].apiKey = routerKey
                 }
+            case .muse:
+                if let metaKey = providerKeys["META_API_KEY"] ?? providerKeys[ProviderType.openrouter.rawValue], !metaKey.isEmpty {
+                    metaHarnessProfiles[idx].apiKey = metaKey
+                }
             case .custom:
                 break
             }
@@ -1130,6 +1134,8 @@ private struct MetaHarnessSettingsPane: View {
             p.apiKey = model.providerKeys[ProviderType.deepseek.rawValue] ?? ""
         case .pi:
             p.apiKey = model.providerKeys[ProviderType.openrouter.rawValue] ?? ""
+        case .muse:
+            p.apiKey = model.providerKeys["META_API_KEY"] ?? model.providerKeys[ProviderType.openrouter.rawValue] ?? ""
         case .custom:
             p.apiKey = model.apiKey
         }
