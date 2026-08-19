@@ -90,12 +90,20 @@ public actor SessionCheckpointEngine {
         list.append(checkpoint)
         checkpoints[sessionID] = list
 
+        // Automatically persist checkpoint to disk for crash durability
+        try? await CheckpointPersistence.shared.saveCheckpoint(checkpoint, sessionID: sessionID)
+
         return checkpoint
     }
 
-    /// Retrieves all checkpoints for a given session.
-    public func getCheckpoints(for sessionID: UUID) -> [SessionCheckpoint] {
-        return checkpoints[sessionID] ?? []
+    /// Retrieves all checkpoints for a given session, combining in-memory and disk records.
+    public func getCheckpoints(for sessionID: UUID) async -> [SessionCheckpoint] {
+        if let memList = checkpoints[sessionID], !memList.isEmpty {
+            return memList
+        }
+        let diskList = await CheckpointPersistence.shared.loadCheckpoints(for: sessionID)
+        checkpoints[sessionID] = diskList
+        return diskList
     }
 
     /// Rolls back the workspace to the specified checkpoint.
@@ -103,35 +111,22 @@ public actor SessionCheckpointEngine {
         sessionID: UUID,
         checkpointID: UUID,
         workspacePath: String
-    ) throws -> [String] {
-        guard let list = checkpoints[sessionID],
-              let target = list.first(where: { $0.id == checkpointID }) else {
+    ) async throws -> [String] {
+        let list = await getCheckpoints(for: sessionID)
+        guard let target = list.first(where: { $0.id == checkpointID }) else {
             throw CheckpointError.checkpointNotFound
         }
 
-        var restoredFiles: [String] = []
-
-        for snapshot in target.snapshots {
-            let fullPath = (workspacePath as NSString).appendingPathComponent(snapshot.relativePath)
-            let fileURL = URL(fileURLWithPath: fullPath)
-
-            // Ensure parent dir exists
-            let parent = fileURL.deletingLastPathComponent()
-            try? FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
-
-            guard let data = snapshot.content.data(using: .utf8) else {
-                continue
-            }
-            try data.write(to: fileURL)
-            restoredFiles.append(snapshot.relativePath)
-        }
-
-        return restoredFiles
+        return try await CheckpointPersistence.shared.rollbackToDiskCheckpoint(
+            checkpoint: target,
+            workspacePath: workspacePath
+        )
     }
 
     /// Clears all checkpoints for a completed or deleted session.
-    public func clear(sessionID: UUID) {
+    public func clear(sessionID: UUID) async {
         checkpoints.removeValue(forKey: sessionID)
+        try? await CheckpointPersistence.shared.deleteCheckpoints(for: sessionID)
     }
 }
 

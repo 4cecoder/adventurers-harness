@@ -40,6 +40,20 @@ enum WorkbenchTab: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum SidebarMode: String, CaseIterable, Identifiable {
+    case threads = "Threads"
+    case files = "Files"
+
+    public var id: String { rawValue }
+
+    public var icon: String {
+        switch self {
+        case .threads: return "bubble.left.and.bubble.right"
+        case .files: return "folder"
+        }
+    }
+}
+
 // MARK: - App State
 
 /// Top-level application state managed as an `@Observable` singleton.
@@ -72,7 +86,10 @@ final class AppState {
 
     // MARK: Panel Visibility
 
-    /// Whether the sidebar (threads) is visible.
+    /// Current sidebar navigation mode (Threads or Workspace Files).
+    var sidebarMode: SidebarMode = .threads
+
+    /// Whether the sidebar is visible.
     var showsSidebar: Bool = true
 
     /// Whether the right inspector panel is visible.
@@ -653,73 +670,109 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header & Filter Segment
-            VStack(spacing: 6) {
-                // Search field
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.caption2)
-                        .foregroundStyle(Color.adTextTertiary)
-
-                    TextField("Search \(appState.threads.count) threads...", text: Bindable(appState).threadSearchQuery)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 11))
-
-                    if !appState.threadSearchQuery.isEmpty {
-                        Button {
-                            appState.threadSearchQuery = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.caption2)
-                                .foregroundStyle(Color.adTextTertiary)
+            // Mode Switcher (Threads vs Workspace Files)
+            HStack(spacing: 2) {
+                ForEach(SidebarMode.allCases) { mode in
+                    let isSelected = appState.sidebarMode == mode
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            appState.sidebarMode = mode
                         }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(Color.adElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-
-                // Segmented Filter Tabs (Active / Pinned / Archived)
-                HStack(spacing: 2) {
-                    ForEach(ThreadFilterTab.allCases) { tab in
-                        let isSelected = selectedFilter == tab
-                        let count: Int = {
-                            switch tab {
-                            case .active: return appState.threads.filter { !$0.isArchived }.count
-                            case .pinned: return appState.threads.filter { $0.isPinned && !$0.isArchived }.count
-                            case .archived: return appState.threads.filter { $0.isArchived }.count
-                            }
-                        }()
-
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                selectedFilter = tab
-                            }
-                        } label: {
-                            HStack(spacing: 3) {
-                                Text(tab.rawValue)
-                                    .font(.system(size: 10, weight: isSelected ? .bold : .medium))
-                                Text("\(count)")
-                                    .font(.system(size: 9, weight: .regular))
-                                    .opacity(0.7)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 3)
-                            .background(isSelected ? Color.adElevated : Color.clear)
-                            .foregroundStyle(isSelected ? Color.adTextPrimary : Color.adTextTertiary)
-                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: mode.icon)
+                                .font(.system(size: 10))
+                            Text(mode.rawValue)
+                                .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
                         }
-                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                        .background(isSelected ? Color.adOverlay : Color.clear)
+                        .foregroundStyle(isSelected ? Color.adTextPrimary : Color.adTextSecondary)
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(2)
-                .background(Color.adBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
+            .padding(2)
+            .background(Color.adElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.top, 8)
+
+            if appState.sidebarMode == .files {
+                WorkspaceFileTreeView(rootDirectory: appState.activeWorkingDirectory()) { file in
+                    appState.activeTab = .diff
+                    appState.currentDiffState.loadLiveGitDiff(workspacePath: appState.activeWorkingDirectory())
+                }
+            } else {
+                // Header & Filter Segment
+                VStack(spacing: 6) {
+                    // Search field
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.caption2)
+                            .foregroundStyle(Color.adTextTertiary)
+
+                        TextField("Search \(appState.threads.count) threads...", text: Bindable(appState).threadSearchQuery)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 11))
+
+                        if !appState.threadSearchQuery.isEmpty {
+                            Button {
+                                appState.threadSearchQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.adTextTertiary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.adElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                    // Segmented Filter Tabs (Active / Pinned / Archived)
+                    HStack(spacing: 2) {
+                        ForEach(ThreadFilterTab.allCases) { tab in
+                            let isSelected = selectedFilter == tab
+                            let count: Int = {
+                                switch tab {
+                                case .active: return appState.threads.filter { !$0.isArchived }.count
+                                case .pinned: return appState.threads.filter { $0.isPinned && !$0.isArchived }.count
+                                case .archived: return appState.threads.filter { $0.isArchived }.count
+                                }
+                            }()
+
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    selectedFilter = tab
+                                }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Text(tab.rawValue)
+                                        .font(.system(size: 10, weight: isSelected ? .bold : .medium))
+                                    Text("\(count)")
+                                        .font(.system(size: 9, weight: .regular))
+                                        .opacity(0.7)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 3)
+                                .background(isSelected ? Color.adElevated : Color.clear)
+                                .foregroundStyle(isSelected ? Color.adTextPrimary : Color.adTextTertiary)
+                                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(2)
+                    .background(Color.adBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
 
             // Toast / Status banner
             if let toast = toastMessage {
@@ -837,6 +890,7 @@ struct SidebarView: View {
                     }
                 }
                 .listStyle(.sidebar)
+            }
             }
 
             // Minimal Footer
