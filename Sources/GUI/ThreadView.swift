@@ -1872,7 +1872,10 @@ public struct MultiToolCallClusterView: View {
             return "Running \(active?.name ?? "tool")..."
         }
         if hasFailure {
-            return "Executed \(toolCalls.count) tool\(toolCalls.count == 1 ? "" : "s") (with errors)"
+            return "\(toolCalls.count) tools executed (with errors)"
+        }
+        if toolCalls.count > 2 {
+            return "⚡️ Long-Horizon Run: \(toolCalls.count) tools executed"
         }
         return "Executed \(toolCalls.count) tool\(toolCalls.count == 1 ? "" : "s") • All Succeeded"
     }
