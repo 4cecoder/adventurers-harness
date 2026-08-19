@@ -79,12 +79,18 @@ Sources/
 
 ## Documentation
 
-- 📖 [**Getting Started (30s Quickstart)**](docs/getting-started.md)
-- 🧠 [**The 3 Inference Paradigms (Subscriptions vs API Keys vs Meta CLIs)**](docs/inference-paradigms.md)
+- 📖 [**Complete Documentation Sitemap**](docs/README.md)
+- 🚀 [**Getting Started (30s Quickstart)**](docs/getting-started.md)
+- 🧠 [**The 3 Inference Paradigms**](docs/inference-paradigms.md)
 - 🛡️ [**Deterministic 6-Gate Pipeline & Sandbox**](docs/gates.md)
+- ⚡ [**Guardian Circuit Breaker & Fail-Closed Safety**](docs/guardian-and-safety.md)
+- 💾 [**Session Durability, JSONL & Checkpoint Rollbacks**](docs/durability-and-checkpoints.md)
+- 📦 [**Open Knowledge Format (OKF) & Skills**](docs/okf-knowledge-packets.md)
 - 🔌 [**Meta-Harness CLI Sub-Agent Dispatch**](docs/meta-harness-dispatch.md)
 - 📊 [**Telemetry & Multi-Model Cost Metering**](docs/telemetry-and-metering.md)
-- 🗺️ [**Engineering Roadmap & Task Contract Matrix**](ROADMAP.md)
+- 🎯 [**Muse Improvement Plan**](docs/muse-improvement-plan.md)
+- 🔍 [**Reverse Engineering Minutia & Implementation Details**](docs/implementation-details.md)
+- 🗺️ [**Engineering Roadmap (v1.0 to v2.5)**](ROADMAP.md)
 
 ## Key Design Patterns
 
