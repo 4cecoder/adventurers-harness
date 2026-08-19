@@ -230,7 +230,9 @@ public final class DictationManager: NSObject, ObservableObject {
                     guard let self = self else { return }
                     self.hasMicrophonePermission = granted
                     if granted {
-                        self.startDictation(initialText: initialText, onUpdate: onUpdate)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            self.startDictation(initialText: initialText, onUpdate: onUpdate)
+                        }
                     } else {
                         self.state = .error("Microphone permission denied.")
                     }
@@ -250,7 +252,9 @@ public final class DictationManager: NSObject, ObservableObject {
                     guard let self = self else { return }
                     self.hasSpeechPermission = (authStatus == .authorized)
                     if authStatus == .authorized {
-                        self.startDictation(initialText: initialText, onUpdate: onUpdate)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            self.startDictation(initialText: initialText, onUpdate: onUpdate)
+                        }
                     } else {
                         self.state = .error("Speech recognition permission denied.")
                     }
@@ -260,6 +264,10 @@ public final class DictationManager: NSObject, ObservableObject {
         } else if speechStatus != .authorized {
             self.state = .error("Speech recognition denied. Enable in System Settings -> Privacy -> Speech Recognition.")
             return
+        }
+
+        if speechRecognizer == nil {
+            self.speechRecognizer = SFSpeechRecognizer(locale: Locale.current) ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
         }
 
         guard let recognizer = speechRecognizer, recognizer.isAvailable else {
@@ -274,6 +282,11 @@ public final class DictationManager: NSObject, ObservableObject {
             self.audioEngine = engine
 
             let node = engine.inputNode
+            guard node.numberOfInputs > 0 else {
+                state = .error("No microphone hardware input detected.")
+                return
+            }
+
             let nativeFormat = node.outputFormat(forBus: 0)
             
             // Validate audio format sample rate
