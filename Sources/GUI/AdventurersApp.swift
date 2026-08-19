@@ -129,9 +129,11 @@ final class AppState {
             return ThreadViewModel()
         }
         if let existing = threadViewModels[item.id] {
+            existing.consolidateOldMessagesIfNeeded()
             return existing
         }
         let vm = ThreadViewModel(threadID: item.id, workingDirectory: item.workingDirectory)
+        vm.consolidateOldMessagesIfNeeded()
         vm.selectedModel = settingsModel.selectedModel
         vm.onMessagesChanged = { [weak self] (messages: [ThreadMessage]) in
             guard let self else { return }

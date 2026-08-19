@@ -145,9 +145,10 @@ public final class ThreadViewModel: ObservableObject {
         if let id = threadID {
             let loaded = ThreadStore.shared.loadMessages(for: id)
             if !loaded.isEmpty {
-                self.messages = loaded
+                let consolidated = ThreadMessageConsolidator.consolidate(loaded)
+                self.messages = consolidated
                 self.isLoadingSkeleton = false
-                meteringState.recalculateContext(messages: loaded)
+                meteringState.recalculateContext(messages: consolidated)
             } else {
                 loadPlaceholderMessages()
                 meteringState.recalculateContext(messages: self.messages)
@@ -156,6 +157,20 @@ public final class ThreadViewModel: ObservableObject {
             loadPlaceholderMessages()
             meteringState.recalculateContext(messages: self.messages)
         }
+    }
+
+    /// Checks old messages on opening thread and compounds multi-turn tool call runs into clean single cards.
+    @discardableResult
+    public func consolidateOldMessagesIfNeeded() -> Bool {
+        let originalCount = messages.count
+        let consolidated = ThreadMessageConsolidator.consolidate(messages)
+        if consolidated.count != originalCount {
+            self.messages = consolidated
+            meteringState.recalculateContext(messages: consolidated)
+            onMessagesChanged?(consolidated)
+            return true
+        }
+        return false
     }
 
     // MARK: - Execution Controls (Pause, Resume, Stop, Queue)
