@@ -177,7 +177,6 @@ public final class DictationManager: NSObject, ObservableObject {
     public init(locale: Locale = Locale(identifier: "en-US")) {
         self.speechRecognizer = SFSpeechRecognizer(locale: locale)
         super.init()
-        checkPermissions()
     }
 
     // MARK: - Permission Verification

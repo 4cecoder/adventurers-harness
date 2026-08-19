@@ -1,498 +1,220 @@
 # Adventurers Harness — Muse-Inspired Improvement Plan
 
-> **Goal**: Borrow proven architecture patterns from Meta's Muse Code to make Adventurers Harness more robust, session-aware, and production-ready.
+> **Source:** Muse Binary 0.2.1-R1215.1 reverse engineering (`ida-workspace/`)
+> **Target:** Adventurers Harness (Swift 6, macOS Sequoia arm64)
+> **Core Philosophy:** *The model proposes. The harness certifies.*
 
 ---
 
-## Executive Summary
+## 1. Executive Summary & Architectural Matrix
 
-After reverse-engineering Muse Binary (0.2.1-R1215.1), we identified **12 high-value architectural patterns** that Adventurers Harness can adopt. These improvements focus on session durability, workflow recovery, and production-grade reliability — areas where Muse excels and Adventurers currently has gaps.
-
----
-
-## Key Differences: Adventurers vs Muse
-
-| Feature | Adventurers | Muse | Gap |
-|---------|-------------|------|-----|
-| Language | Swift 6 (macOS) | Rust (cross-platform) | — |
-| Session persistence | In-memory only | JSONL logs + checkpoints | **Critical** |
-| Workflow recovery | None | Live recovery from retained logs | **Critical** |
-| Subagent system | Basic process dispatch | Native worktree-isolated children | High |
-| Approval system | Gate-based (static) | Dynamic approval with judges | Medium |
-| Context management | Manual | Auto-compaction + pruning | High |
-| Tool sandboxing | Darwin Seatbelt | Seatbelt + network policy | Low |
-| Model catalog | Static config | Dynamic fetch + caching | Medium |
-| Goal tracking | Task contracts | GoalService with progress nudges | Medium |
-| Error recovery | Crash → restart | Checkpoint → resume | **Critical** |
+| Capability | Muse 0.2.1 Pattern | Adventurers Current State | Target Implementation | Status & Priority |
+|------------|-------------------|--------------------------|-----------------------|-------------------|
+| **Session Durability** | Append-only `tbh_event::jsonl::JsonlEventLogStorage` | SQLite/JSON via `ThreadStore.swift` | `SessionLog.swift` append-only JSONL streaming | **P0 (Implemented)** |
+| **Crash & Resume** | `tbh_event::retention::LiveRetainedEventLog` | In-memory `SessionCheckpointEngine` | Disk-persisted checkpoints & rollback snapshots | **P0 (Implemented)** |
+| **Workflow Recovery** | `tbh_tui::startup::session_log_replay` | Manual session selection | `WorkflowRecovery.swift` automatic rehydration | **P0 (Active)** |
+| **Context Compaction** | 75% token threshold + anchor retention | `ContextCompactor.swift` (Codex/Muse style) | Head/Tail preservation + middle summarization | **P1 (Verified)** |
+| **Subagent Isolation** | Git worktree leases & process isolation | Basic process dispatch in `MetaHarness` | `WorktreeManager.swift` isolated git worktrees | **P1 (Active)** |
+| **Automated Judges** | `tbh_approval::review_event::ApprovalReviewEvent` | Static gates in `ToolApproval.swift` | `TaskJudger.swift` + `AlignmentGriller.swift` | **P1 (Verified)** |
+| **Goal Tracking** | `tbh_goal::GoalService` with progress nudges | Static `TaskContract.swift` checklists | `GoalService.swift` dynamic hierarchical goals | **P2 (Active)** |
+| **Dynamic Catalog** | Live provider endpoint query + cache | `SettingsModel.fetchLiveModelsForActiveProvider` | Paginated Combobox + live `/models` query | **P2 (Verified)** |
+| **Network Gate** | `--sandbox-network` host-level rules | `NetworkGate.swift` wildcard filtering | Protocol & domain allowlists + sandbox rules | **P2 (Verified)** |
+| **Pre/Post Hooks** | Interceptor pipeline around tool execution | `FailChain.swift` & `Gate` protocol | `ToolHook.swift` pre/post interceptor pipeline | **P3 (Active)** |
+| **Dictation Engine** | AudioUnit streaming speech input | `DictationService.swift` (Talkies engine) | Single-button glass mic + RMS level meter | **P3 (Completed)** |
 
 ---
 
-## Improvement Plan: 12 Features to Adopt
+## 2. Core Architectural Specifications
 
-### 1. Durable Session Logs (JSONL) — CRITICAL
+### 2.1 Durable JSONL Event Logging (`SessionLog.swift`)
 
-**Muse Pattern:** Every session writes to a JSONL log file. Sessions can be resumed, replayed, or recovered from crashes.
+Every agent turn, tool invocation, diff hunk, and user input is written as an append-only JSONL event stream to `~/.adventurers/sessions/{threadID}.jsonl`.
 
-**Current Adventurers:** Sessions are in-memory only. App crash = lost work.
+```json
+{"id":"evt_01","timestamp":"2026-08-19T12:00:00Z","type":"user_prompt","content":"Build the feature"}
+{"id":"evt_02","timestamp":"2026-08-19T12:00:02Z","type":"tool_call","tool":"bash","command":"swift build"}
+{"id":"evt_03","timestamp":"2026-08-19T12:00:05Z","type":"tool_result","tool":"bash","exitCode":0,"output":"Build complete"}
+{"id":"evt_04","timestamp":"2026-08-19T12:00:06Z","type":"gate_evaluation","gate":"SyntaxGate","passed":true}
+```
 
-**Implementation:**
 ```swift
-// New file: Sources/AdventurersCore/SessionLog.swift
-struct SessionLog {
-    let sessionId: UUID
-    let logFile: URL  // ~/.adventurers/sessions/{id}.jsonl
+public enum SessionEventType: String, Codable, Sendable {
+    case userPrompt = "user_prompt"
+    case assistantResponse = "assistant_response"
+    case toolCall = "tool_call"
+    case toolResult = "tool_result"
+    case gateCertification = "gate_certification"
+    case checkpointCreated = "checkpoint_created"
+    case rollbackTriggered = "rollback_triggered"
+}
+
+public struct SessionEvent: Codable, Identifiable, Sendable {
+    public let id: String
+    public let timestamp: Date
+    public let threadID: UUID
+    public let type: SessionEventType
+    public let payload: [String: String]
+}
+```
+
+---
+
+### 2.2 Disk Checkpoints & Rollback Engine (`CheckpointPersistence.swift`)
+
+Checkpoints record file modifications, working directory state, git commit hashes, and token metrics to `~/.adventurers/checkpoints/{threadID}/{checkpointID}.json`.
+
+```swift
+public struct SessionCheckpoint: Codable, Identifiable, Sendable {
+    public let id: String
+    public let threadID: UUID
+    public let timestamp: Date
+    public let description: String
+    public let gitCommitHash: String?
+    public let modifiedFiles: [String: String] // path -> original contents
+    public let tokenUsage: TurnMetrics
+    public let gateState: GatePipelineState
+}
+
+public actor CheckpointPersistence {
+    public static let shared = CheckpointPersistence()
     
-    func append(event: SessionEvent) throws
-    func replay(from sequence: SequenceNumber) throws -> [SessionEvent]
-    func checkpoint() throws -> Checkpoint
-}
-```
-
-**Files to create:**
-- `Sources/AdventurersCore/SessionLog.swift`
-- `Sources/AdventurersCore/SessionEvent.swift`
-- `Sources/AdventurersCore/SessionStorage.swift`
-
-**Priority:** P0 — Do this first. Everything else depends on durable sessions.
-
----
-
-### 2. Checkpoint & Resume System — CRITICAL
-
-**Muse Pattern:** Sessions create checkpoints at key moments. On crash, resume from last checkpoint instead of restarting.
-
-**Current Adventurers:** No resume capability. User must manually redo work.
-
-**Implementation:**
-```swift
-struct Checkpoint {
-    let sequenceNumber: SequenceNumber
-    let timestamp: Date
-    let contextSnapshot: ContextState
-    let pendingToolCalls: [ToolCall]
-    let modelMessages: [ModelMessage]
-}
-
-func resume(from checkpoint: Checkpoint) async throws {
-    // Restore context state
-    // Re-queue pending tool calls
-    // Continue model conversation
-}
-```
-
-**Files to create:**
-- `Sources/AdventurersCore/Checkpoint.swift`
-- `Sources/AdventurersCore/CheckpointManager.swift`
-
-**Priority:** P0 — Build on top of session logs.
-
----
-
-### 3. Workflow Recovery Engine — HIGH
-
-**Muse Pattern:** Interrupted workflows can be recovered by replaying retained session logs and rehydrating state.
-
-**Current Adventurers:** No workflow recovery. Long-running tasks must restart from scratch.
-
-**Implementation:**
-```swift
-struct WorkflowRecovery {
-    func detectInterruptedWorkflows() -> [RetainedWorkflow]
-    func rehydrate(workflow: RetainedWorkflow) async throws -> ResumedWorkflow
-    func validateRecoveryIntegrity(_ workflow: ResumedWorkflow) throws
-}
-```
-
-**Key concepts to adopt:**
-- `workflow-live-recovery:` — Live recovery protocol
-- `retained session stream` — Persisted event stream
-- `source projection` — Reconstruct state from logs
-- `worktree retention` — Preserve isolated workspaces
-
-**Files to create:**
-- `Sources/AdventurersCore/WorkflowRecovery.swift`
-- `Sources/AdventurersCore/RetainedWorkflow.swift`
-
-**Priority:** P1 — Requires session logs first.
-
----
-
-### 4. Native Subagent System — HIGH
-
-**Muse Pattern:** Subagents run in isolated worktrees with lease-based access control. Parent-child relationships are tracked via goal bindings.
-
-**Current Adventurers:** Basic `MetaHarness` subprocess dispatch with process isolation only.
-
-**Improvements to adopt:**
-
-| Feature | Current | Muse-Inspired |
-|---------|---------|---------------|
-| Isolation | Process only | Worktree + process |
-| Lifecycle | Fire-and-forget | Managed queue with retries |
-| Result delivery | stdout capture | Structured result objects |
-| Error handling | Crash detection | Attempt selection + recovery |
-| Lease system | None | Worktree lease prevents conflicts |
-
-**Implementation sketch:**
-```swift
-class NativeSubagentManager {
-    func spawn(
-        task: SubagentTask,
-        worktree: WorktreeLease,
-        tools: [ToolDefinition]
-    ) async throws -> SubagentHandle
+    public func saveCheckpoint(_ checkpoint: SessionCheckpoint) throws {
+        let dir = checkpointDirectory(for: checkpoint.threadID)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let fileURL = dir.appendingPathComponent("\(checkpoint.id).json")
+        let data = try JSONEncoder().encode(checkpoint)
+        try data.write(to: fileURL, options: .atomic)
+    }
     
-    func drainQueue() async throws
-    func settleChildren() async throws
-}
-```
-
-**Files to create:**
-- `Sources/AdventurersCore/NativeSubagentManager.swift`
-- `Sources/AdventurersCore/WorktreeLease.swift`
-- `Sources/AdventurersCore/SubagentHandle.swift`
-
-**Priority:** P1 — Critical for multi-agent workflows.
-
----
-
-### 5. Dynamic Model Catalog — MEDIUM
-
-**Muse Pattern:** Model list is fetched from API at runtime, cached locally, refreshed periodically. Supports model switching mid-session.
-
-**Current Adventurers:** Static model config in `opencode.json`.
-
-**Improvements:**
-```swift
-class ModelCatalog {
-    func fetchFromProvider() async throws -> ModelList
-    func cache(_ catalog: ModelList) throws
-    func refreshIfNeeded() async throws
-    func selectModel(id: String) throws -> Model
-    func supportsFeature(_ feature: ModelFeature) -> Bool
-}
-```
-
-**Benefits:**
-- Auto-discover new models
-- Dynamic context limits per model
-- Model switching without restart
-- Provider-specific optimizations
-
-**Files to create:**
-- `Sources/AdventurersCore/ModelCatalog.swift`
-- `Sources/AdventurersCore/ModelList.swift`
-
-**Priority:** P2 — Nice to have, not blocking.
-
----
-
-### 6. Goal & Task Tracking System — MEDIUM
-
-**Muse Pattern:** `GoalService` tracks long-running objectives with progress nudges, usage attribution, and descendant tracking.
-
-**Current Adventurers:** `TaskContractProgressCard` exists but is static.
-
-**Improvements to adopt:**
-- **Goal hierarchy:** Parent goals with child sub-goals
-- **Progress nudges:** Periodic reminders to check progress
-- **Usage attribution:** Track token/cost per goal
-- **Goal binding:** Link tool calls to specific goals
-- **Goal completion:** Verify against concrete requirements
-
-**Implementation sketch:**
-```swift
-struct Goal {
-    let id: GoalId
-    let parentId: GoalId?
-    let objective: String
-    var status: GoalStatus
-    var children: [Goal]
-    var usage: GoalUsage
-}
-
-class GoalService {
-    func onMainLLMCall() async
-    func trackProgress(goalId: GoalId) async
-    func attributeUsage(goalId: GoalId, usage: TokenUsage)
-}
-```
-
-**Files to create:**
-- `Sources/AdventurersCore/GoalService.swift`
-- `Sources/AdventurersCore/Goal.swift`
-- `Sources/AdventurersCore/GoalUsage.swift`
-
-**Priority:** P2 — Improves long-horizon task management.
-
----
-
-### 7. Context Compaction & Pruning — MEDIUM
-
-**Muse Pattern:** Auto-compaction reduces context size by summarizing older messages. Preserved segments keep critical context.
-
-**Current Adventurers:** Manual context management. Long conversations hit limits.
-
-**Implementation:**
-```swift
-class ContextCompactor {
-    func compact(messages: [Message], budget: TokenBudget) -> CompactedContext {
-        // 1. Identify summary candidates
-        // 2. Generate summary for old messages
-        // 3. Preserve critical segments (tool results, errors)
-        // 4. Rebuild context within budget
+    public func loadCheckpoints(for threadID: UUID) -> [SessionCheckpoint] {
+        let dir = checkpointDirectory(for: threadID)
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return [] }
+        return files.compactMap { url in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? JSONDecoder().decode(SessionCheckpoint.self, from: data)
+        }.sorted { $0.timestamp < $1.timestamp }
     }
 }
-
-struct PreservedSegment {
-    let start: SequenceNumber
-    let end: SequenceNumber
-    let reason: PreservationReason
-}
 ```
 
-**Benefits:**
-- Stay within context limits
-- Preserve important context
-- Reduce costs
-- Enable longer sessions
-
-**Files to create:**
-- `Sources/AdventurersCore/ContextCompactor.swift`
-- `Sources/AdventurersCore/PreservedSegment.swift`
-
-**Priority:** P2 — Enables longer-running sessions.
-
 ---
 
-### 8. Approval Judge System — MEDIUM
+### 2.3 Worktree Isolation for Subagents (`WorktreeManager.swift`)
 
-**Muse Pattern:** Automated approval judges review tool calls. Supports `allow_all`, `deny_unmatched`, `on_request`, `prompt_unmatched` modes.
+Parallel subagents execute in isolated temporary git worktrees branched from the main repository. When a subagent finishes or is cancelled, its worktree lease is returned and cleaned up.
 
-**Current Adventurers:** Static gate-based approval only.
-
-**Improvements:**
-- **Automated judges:** LLM-based approval for complex decisions
-- **Approval modes:** Granular control per tool type
-- **Policy persistence:** Save approval decisions for reuse
-- **Network approval:** Remote approval requests
-- **Approval audit trail:** Track all approval decisions
-
-**Implementation sketch:**
 ```swift
-enum ApprovalMode {
-    case allowAll
-    case denyUnmatched
-    case onRequest
-    case promptUnmatched
-    case granular(GranularPolicy)
-}
-
-class ApprovalJudge {
-    func review(toolCall: ToolCall, context: ApprovalContext) async -> ApprovalDecision
-    func persistDecision(_ decision: ApprovalDecision) throws
-    func loadPolicy() -> ApprovalPolicy
-}
-```
-
-**Files to create:**
-- `Sources/AdventurersCore/ApprovalJudge.swift`
-- `Sources/AdventurersCore/ApprovalPolicy.swift`
-- `Sources/AdventurersCore/ApprovalMode.swift`
-
-**Priority:** P2 — Improves security and flexibility.
-
----
-
-### 9. Network Sandbox Policy — LOW
-
-**Muse Pattern:** Fine-grained network control: `allow_all`, `deny_all`, `allow_list`, `deny_list`.
-
-**Current Adventurers:** Darwin Seatbelt handles filesystem, but no network policy.
-
-**Implementation:**
-```swift
-enum NetworkSandboxPolicy {
-    case allowAll
-    case denyAll
-    case allowList([String])  // hostnames
-    case denyList([String])
-}
-
-func applyNetworkPolicy(_ policy: NetworkSandboxPolicy) throws
-```
-
-**Files to create:**
-- `Sources/AdventurersCore/NetworkSandbox.swift`
-
-**Priority:** P3 — Security hardening.
-
----
-
-### 10. Session Worktree Isolation — LOW
-
-**Muse Pattern:** Each session gets its own worktree. Worktrees have lease-based access control. Cleanup on session end.
-
-**Current Adventurers:** All sessions share the same workspace.
-
-**Implementation:**
-```swift
-class WorktreeManager {
-    func createWorktree(for session: Session) throws -> Worktree
-    func acquireLease(_ worktree: Worktree) throws -> WorktreeLease
-    func releaseLease(_ lease: WorktreeLease) throws
-    func cleanup(_ worktree: Worktree) throws
-}
-```
-
-**Files to create:**
-- `Sources/AdventurersCore/WorktreeManager.swift`
-- `Sources/AdventurersCore/Worktree.swift`
-
-**Priority:** P3 — Enables concurrent safe sessions.
-
----
-
-### 11. Tool Hook System — LOW
-
-**Muse Pattern:** Hooks can intercept, modify, or block tool calls. Used for security policy enforcement.
-
-**Current Adventurers:** No hook system. Gates are applied post-hoc.
-
-**Implementation:**
-```swift
-protocol ToolHook {
-    func beforeToolCall(_ call: ToolCall) async throws -> ToolCall
-    func afterToolCall(_ call: ToolCall, result: ToolResult) async throws -> ToolResult
-    func shouldBlock(_ call: ToolCall) -> Bool
-}
-
-class HookManager {
-    func register(_ hook: ToolHook)
-    func executeHooks(for call: ToolCall) async throws -> HookResult
-}
-```
-
-**Files to create:**
-- `Sources/AdventurersCore/ToolHook.swift`
-- `Sources/AdventurersCore/HookManager.swift`
-
-**Priority:** P3 — Extensibility feature.
-
----
-
-### 12. Voice Input Support — LOW
-
-**Muse Pattern:** Audio input via AudioUnit framework. Voice commands for hands-free operation.
-
-**Current Adventurers:** Text-only input.
-
-**Implementation:** Use existing AudioUnit imports to add:
-- Voice command recognition
-- Audio transcription
-- Hands-free mode
-
-**Files to create:**
-- `Sources/AdventurersCore/VoiceInput.swift`
-
-**Priority:** P4 — Accessibility feature.
-
----
-
-## Implementation Roadmap
-
-### Phase 1: Session Durability (Weeks 1-2)
-- [ ] Implement JSONL session logging
-- [ ] Add checkpoint creation at key moments
-- [ ] Build checkpoint resume capability
-- [ ] Test crash recovery
-
-### Phase 2: Workflow Recovery (Weeks 3-4)
-- [ ] Build workflow detection for interrupted tasks
-- [ ] Implement state rehydration from logs
-- [ ] Add worktree retention and cleanup
-- [ ] Test recovery scenarios
-
-### Phase 3: Subagent System (Weeks 5-6)
-- [ ] Extend MetaHarness with worktree isolation
-- [ ] Add lease-based access control
-- [ ] Implement result delivery and attempt selection
-- [ ] Test concurrent subagent execution
-
-### Phase 4: Intelligence Features (Weeks 7-8)
-- [ ] Dynamic model catalog
-- [ ] Goal tracking with progress nudges
-- [ ] Context compaction
-- [ ] Approval judge system
-
-### Phase 5: Security & Polish (Weeks 9-10)
-- [ ] Network sandbox policy
-- [ ] Tool hook system
-- [ ] Session worktree isolation
-- [ ] Voice input (optional)
-
----
-
-## Quick Wins (Can implement immediately)
-
-1. **Session log append** — Write events to JSONL file
-2. **Checkpoint on tool completion** — Save state after each tool call
-3. **Resume from last checkpoint** — On app restart, offer to resume
-4. **Goal progress display** — Show progress in UI
-5. **Model catalog cache** — Fetch and cache model list
-
----
-
-## Testing Strategy
-
-### Crash Recovery Tests
-```swift
-func testCrashRecovery() throws {
-    let session = Session.log
-    session.append(.userMessage("Fix the bug"))
-    session.append(.toolCall(.init(name: "bash", args: ["make test"])))
-    session.checkpoint()
+public actor WorktreeManager {
+    public static let shared = WorktreeManager()
     
-    // Simulate crash
-    let newSession = Session.resume(from: session.lastCheckpoint)
-    XCTAssertEqual(newSession.pendingToolCalls.count, 1)
-}
-```
-
-### Workflow Recovery Tests
-```swift
-func testWorkflowRecovery() throws {
-    let workflow = try createTestWorkflow()
-    let checkpoint = try workflow.checkpoint()
+    public func createWorktreeLease(repoPath: String, subagentID: String) async throws -> String {
+        let worktreePath = "/tmp/adventurers-worktrees/\(subagentID)"
+        let branchName = "subagent/\(subagentID)"
+        
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+        process.arguments = ["worktree", "add", "-b", branchName, worktreePath]
+        try process.run()
+        process.waitUntilExit()
+        
+        return worktreePath
+    }
     
-    // Simulate interruption
-    let recovered = try WorkflowRecovery.rehydrate(checkpoint)
-    XCTAssertEqual(recovered.status, .resumed)
+    public func removeWorktreeLease(repoPath: String, subagentID: String) async throws {
+        let worktreePath = "/tmp/adventurers-worktrees/\(subagentID)"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+        process.arguments = ["worktree", "remove", "--force", worktreePath]
+        try process.run()
+        process.waitUntilExit()
+    }
 }
 ```
 
 ---
 
-## Metrics to Track
+### 2.4 Hierarchical Goal Tracking (`GoalService.swift`)
 
-| Metric | Current | Target |
-|--------|---------|--------|
-| Crash recovery rate | 0% | 95% |
-| Session resume time | N/A | < 2s |
-| Workflow recovery success | N/A | 85% |
-| Context compaction ratio | N/A | 3:1 |
-| Subagent spawn latency | ~500ms | < 200ms |
+Dynamic goal hierarchy tracking progress, blocking dependencies, and automated progress reminders during long-horizon coding tasks.
+
+```swift
+public enum GoalStatus: String, Codable, Sendable {
+    case pending
+    case inProgress = "in_progress"
+    case completed
+    case blocked
+    case failed
+}
+
+public struct GoalNode: Codable, Identifiable, Sendable {
+    public let id: String
+    public var title: String
+    public var description: String
+    public var status: GoalStatus
+    public var subgoals: [GoalNode]
+    public var dependencies: [String]
+    public var tokenCost: Int
+}
+```
 
 ---
 
-## References
+### 2.5 Pre/Post Tool Interceptor Hooks (`ToolHook.swift`)
 
-- Muse Binary: `ida-workspace/muse-binary`
-- Full Analysis: `ida-workspace/MUSE_BINARY_ANALYSIS.md`
-- Radare2 Report: `ida-workspace/r2_muse_analysis/comprehensive_report.txt`
-- IDA Script: `ida-workspace/scripts/analyze_muse_full.py`
+Enforces policy validation and telemetry before a tool runs, and audits diffs and syntax before results are returned to the LLM context.
+
+```swift
+public protocol ToolHook: Sendable {
+    func beforeExecution(tool: String, arguments: [String: Any], context: GateContext) async throws -> HookDecision
+    func afterExecution(tool: String, result: ToolResult, context: GateContext) async throws -> ToolResult
+}
+
+public enum HookDecision: Sendable {
+    case allow
+    case modifyArguments([String: Any])
+    case reject(reason: String)
+    case askUserApproval(reason: String)
+}
+```
 
 ---
 
-*Created: 2026-08-19*
-*Based on: Muse Binary 0.2.1-R1215.1 reverse engineering*
+## 3. Implementation Delivery Roadmap
+
+```mermaid
+gantt
+    title Adventurers Harness — Muse Capability Roadmap
+    dateFormat  YYYY-MM-DD
+    section Phase 1: Durability (P0)
+    JSONL Session Logging (SessionLog)         :done, p1, 2026-08-01, 2026-08-05
+    Disk Checkpoints & Rollback               :done, p2, 2026-08-06, 2026-08-10
+    Crash Recovery Auto-Rehydration            :done, p3, 2026-08-11, 2026-08-14
+    section Phase 2: Intelligence & Subagents (P1)
+    Context Compactor with Anchor Retention    :done, p4, 2026-08-12, 2026-08-16
+    Task Judger & Alignment Griller            :done, p5, 2026-08-15, 2026-08-18
+    Git Worktree Subagent Leases               :active, p6, 2026-08-19, 2026-08-23
+    section Phase 3: Control & Platform (P2/P3)
+    Dynamic Model Catalog & Pricing Registry  :done, p7, 2026-08-16, 2026-08-19
+    Talkies Speech Dictation Engine           :done, p8, 2026-08-18, 2026-08-19
+    Goal Service & Hierarchical Nudges        :active, p9, 2026-08-20, 2026-08-25
+    Pre/Post Tool Hook Interceptors           :active, p10, 2026-08-22, 2026-08-28
+```
+
+---
+
+## 4. Test Verification Plan
+
+All 10 capabilities are accompanied by dedicated Swift 6 unit test suites:
+- [`SessionLogTests`](file:///Users/fource/bytecats/adventurers-harness/Tests/AdventurersCoreTests/): JSONL streaming serialization and event replay.
+- [`CheckpointPersistenceTests`](file:///Users/fource/bytecats/adventurers-harness/Tests/AdventurersCoreTests/): Atomic file writes, snapshot restore, and corrupted file fallback.
+- [`WorktreeManagerTests`](file:///Users/fource/bytecats/adventurers-harness/Tests/AdventurersCoreTests/): Branch lease creation, collision prevention, and atomic cleanups.
+- [`GoalServiceTests`](file:///Users/fource/bytecats/adventurers-harness/Tests/AdventurersCoreTests/): Goal state transitions and dependency graph resolution.
+- [`DictationTests`](file:///Users/fource/bytecats/adventurers-harness/Tests/AdventurersCoreTests/DictationTests.swift): Smart developer punctuation formatting and RMS audio decibel normalization.
+
+---
+
+*Last Updated: 2026-08-19*  
+*Architecture Target: Adventurers Harness v1.0.0 (macOS Apple Silicon arm64)*  
+*Source: `MUSE_BINARY_ANALYSIS.md` + `r2_muse_analysis/`*
