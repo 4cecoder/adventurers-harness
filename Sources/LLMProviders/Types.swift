@@ -132,6 +132,7 @@ public struct AnyCodable: @unchecked Sendable, Codable {
     }
 
     public func unwrap() -> Any { value }
+    public var stringValue: String? { value as? String }
 }
 
 // MARK: - LLM Provider Protocol

@@ -624,9 +624,9 @@ public final class ThreadViewModel: ObservableObject {
                     if let threadUUID = self.threadID {
                         var targetFiles: [String] = []
                         for inv in toolInvocations {
-                            if let fp = (inv.arguments["TargetFile"]?.value as? String)
-                                ?? (inv.arguments["filePath"]?.value as? String)
-                                ?? (inv.arguments["path"]?.value as? String) {
+                            if let fp = inv.arguments["TargetFile"]?.stringValue
+                                ?? inv.arguments["filePath"]?.stringValue
+                                ?? inv.arguments["path"]?.stringValue {
                                 targetFiles.append(fp)
                             }
                         }
