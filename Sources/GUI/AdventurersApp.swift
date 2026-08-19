@@ -451,6 +451,9 @@ struct ContentView: View {
             }
 
             ToolbarItemGroup(placement: .primaryAction) {
+                // Cyberdeck Vibe Station Pill (Disabled by default)
+                CyberdeckRadioPill()
+
                 // Model Selector Pill
                 ModelSelectorMenu()
 
