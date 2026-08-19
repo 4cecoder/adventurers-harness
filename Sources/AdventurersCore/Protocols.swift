@@ -73,11 +73,36 @@ public struct GateContext: Sendable {
     public let taskID: String
     public let contract: TaskContract
     public let previousOutputs: [AgentOutput]
+    public let workingDirectory: String
 
-    public init(taskID: String, contract: TaskContract, previousOutputs: [AgentOutput]) {
+    public init(
+        taskID: String,
+        contract: TaskContract,
+        previousOutputs: [AgentOutput],
+        workingDirectory: String = WorkspaceConfig.defaultWorkspacePath
+    ) {
         self.taskID = taskID
         self.contract = contract
         self.previousOutputs = previousOutputs
+        self.workingDirectory = workingDirectory
+    }
+}
+
+// MARK: - Workspace Configuration
+
+public enum WorkspaceConfig: Sendable {
+    /// Detects the active repository / workspace directory, avoiding macOS app root "/" fallback.
+    public static var defaultWorkspacePath: String {
+        let cur = FileManager.default.currentDirectoryPath
+        if cur != "/" && cur.hasPrefix("/Users/") && FileManager.default.fileExists(atPath: cur) {
+            return cur
+        }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let harnessPath = home.appendingPathComponent("bytecats/adventurers-harness").path
+        if FileManager.default.fileExists(atPath: harnessPath) {
+            return harnessPath
+        }
+        return home.path
     }
 }
 

@@ -232,6 +232,8 @@ public final class ThreadStore: Sendable {
             if let data = try? Data(contentsOf: file),
                let threadData = try? JSONDecoder().decode(PersistedThreadData.self, from: data) {
                 let status = ThreadStatus(rawValue: threadData.status) ?? .running
+                let rawDir = threadData.workingDirectory
+                let validDir = (rawDir != nil && rawDir != "/" && !rawDir!.isEmpty) ? rawDir! : WorkspaceConfig.defaultWorkspacePath
                 let item = ThreadItem(
                     id: threadData.id,
                     name: threadData.name,
@@ -242,7 +244,7 @@ public final class ThreadStore: Sendable {
                     agentName: threadData.agentName,
                     isArchived: threadData.isArchived,
                     isPinned: threadData.isPinned,
-                    workingDirectory: threadData.workingDirectory ?? FileManager.default.currentDirectoryPath
+                    workingDirectory: validDir
                 )
                 items.append(item)
             }

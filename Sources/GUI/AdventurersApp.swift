@@ -181,7 +181,7 @@ final class AppState {
 
     // MARK: Actions & CRUD Operations
 
-    func createThread(name: String? = nil, workingDirectory: String = FileManager.default.currentDirectoryPath) {
+    func createThread(name: String? = nil, workingDirectory: String = WorkspaceConfig.defaultWorkspacePath) {
         let threadName = name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? name!
             : "Task: Adventure #\(threads.count + 1)"

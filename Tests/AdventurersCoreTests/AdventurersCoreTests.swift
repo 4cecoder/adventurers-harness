@@ -485,4 +485,12 @@ struct AdventurersCoreTests {
         #expect(hybridMode.rawValue.contains("Hybrid"))
         #expect(MetaHarnessAuthMode.allCases.count == 3)
     }
+
+    @Test("WorkspaceConfig resolves valid non-root directory")
+    func workspaceConfigResolution() {
+        let path = WorkspaceConfig.defaultWorkspacePath
+        #expect(path != "/")
+        #expect(path.hasPrefix("/Users/"))
+        #expect(FileManager.default.fileExists(atPath: path))
+    }
 }

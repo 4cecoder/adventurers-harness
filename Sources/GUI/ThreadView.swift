@@ -128,7 +128,7 @@ public final class ThreadViewModel: ObservableObject {
 
     /// The most recent streaming message ID, used for auto-scroll.
     @Published public var lastStreamingMessageID: String?
-    @Published public var workingDirectory: String = FileManager.default.currentDirectoryPath
+    @Published public var workingDirectory: String = WorkspaceConfig.defaultWorkspacePath
     public var workingDirectoryName: String { (workingDirectory as NSString).lastPathComponent }
     public var threadID: UUID?
     public var onMessagesChanged: (([ThreadMessage]) -> Void)?
@@ -137,8 +137,10 @@ public final class ThreadViewModel: ObservableObject {
 
     public init(threadID: UUID? = nil, workingDirectory: String? = nil) {
         self.threadID = threadID
-        if let dir = workingDirectory, !dir.isEmpty {
+        if let dir = workingDirectory, !dir.isEmpty && dir != "/" {
             self.workingDirectory = dir
+        } else {
+            self.workingDirectory = WorkspaceConfig.defaultWorkspacePath
         }
         if let id = threadID {
             let loaded = ThreadStore.shared.loadMessages(for: id)
@@ -444,7 +446,17 @@ public final class ThreadViewModel: ObservableObject {
             6. `bash`: Run shell commands in the project directory (command)
             7. `glob`: Find files matching a glob pattern (pattern, path)
 
-            To invoke a tool, output a fenced code block with this JSON format:
+            To invoke a tool, output XML format:
+            <tool_call>
+            <tool_name>tool_name</tool_name>
+            <arguments>
+            {
+              "argument_name": "value"
+            }
+            </arguments>
+            </tool_call>
+
+            Or Markdown code block format:
             ```tool_call
             {
               "name": "tool_name",
@@ -530,6 +542,11 @@ public final class ThreadViewModel: ObservableObject {
                     // Check for tool calls
                     let toolInvocations = self.extractToolCalls(from: accumulatedContent)
                     if toolInvocations.isEmpty {
+                        // Strip any potential dangling markup from final message
+                        let cleaned = self.toolParser.cleanMessageContent(from: accumulatedContent)
+                        if !cleaned.isEmpty && cleaned != accumulatedContent {
+                            self.updateMessage(id: agentMessageID, content: cleaned)
+                        }
                         break // Done, no more tool calls
                     }
 
@@ -565,13 +582,14 @@ public final class ThreadViewModel: ObservableObject {
                         }
                     }
 
-                    // Update message with executed tool calls and results
+                    // Update message with executed tool calls and cleaned text
+                    let cleanedContent = self.toolParser.cleanMessageContent(from: accumulatedContent)
                     if let idx = self.messages.firstIndex(where: { $0.id == agentMessageID }) {
                         let old = self.messages[idx]
                         self.messages[idx] = ThreadMessage(
                             id: old.id,
                             role: old.role,
-                            content: old.content,
+                            content: cleanedContent.isEmpty ? "Executed \(threadToolCalls.count) tool\(threadToolCalls.count == 1 ? "" : "s")." : cleanedContent,
                             timestamp: old.timestamp,
                             toolCalls: threadToolCalls,
                             toolResults: threadToolResults,

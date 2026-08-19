@@ -72,7 +72,7 @@ public struct ThreadItem: Identifiable, Sendable, Hashable {
         agentName: String = "Adventurer",
         isArchived: Bool = false,
         isPinned: Bool = false,
-        workingDirectory: String = FileManager.default.currentDirectoryPath
+        workingDirectory: String = WorkspaceConfig.defaultWorkspacePath
     ) {
         self.id = id
         self.name = name
