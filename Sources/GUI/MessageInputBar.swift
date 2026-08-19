@@ -378,49 +378,49 @@ public struct MessageInputBar: View {
                                     colors: [Color.red.opacity(0.6), Color.adOrange.opacity(0.0)],
                                     center: .center,
                                     startRadius: 4,
-                                    endRadius: 18
+                                    endRadius: 20
                                 )
                             )
-                            .frame(width: 32, height: 32)
+                            .frame(width: 38, height: 38)
                     }
 
                     Circle()
                         .fill(dictationButtonBackground)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 32, height: 32)
                         .overlay(
                             Circle()
                                 .strokeBorder(
-                                    dictation.state.isListening ? Color.red.opacity(0.8) :
-                                    (hoverDictate ? Color.adOrange.opacity(0.5) : Color.white.opacity(0.08)),
-                                    lineWidth: 1
+                                    dictation.state.isListening ? Color.red :
+                                    (hoverDictate ? Color.adOrange : Color.adOrange.opacity(0.45)),
+                                    lineWidth: 1.2
                                 )
                         )
-                        .shadow(color: dictation.state.isListening ? Color.red.opacity(0.5) : .clear, radius: 4)
+                        .shadow(color: dictation.state.isListening ? Color.red.opacity(0.6) : (hoverDictate ? Color.adOrange.opacity(0.3) : .clear), radius: 4)
 
                     Image(systemName: dictation.state.isListening ? "stop.fill" : "mic.fill")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(dictationButtonForeground)
                 }
             }
         }
         .buttonStyle(.plain)
         .onHover { hoverDictate = $0 }
-        .help(dictation.state.isListening ? "Stop dictation (Auto-formats punctuation)" : "Dictate prompt (Apple Speech / Talkies audio engine)")
+        .help(dictation.state.isListening ? "Stop dictation (Auto-formats punctuation)" : "Dictate prompt with Talkies Speech Engine")
         .animation(.easeInOut(duration: 0.2), value: dictation.state.isListening)
     }
 
     private var dictationButtonBackground: Color {
         if dictation.state.isListening {
-            return Color.red.opacity(0.9)
+            return Color.red.opacity(0.95)
         }
-        return hoverDictate ? Color.adElevated.opacity(0.9) : Color.adElevated.opacity(0.5)
+        return hoverDictate ? Color.adElevated : Color.adCard.opacity(0.9)
     }
 
     private var dictationButtonForeground: Color {
         if dictation.state.isListening {
             return Color.white
         }
-        return hoverDictate ? Color.adOrange : Color.adTextSecondary
+        return hoverDictate ? Color.white : Color.adOrange
     }
 
     @ViewBuilder
