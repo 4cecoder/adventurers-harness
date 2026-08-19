@@ -16,7 +16,7 @@ class Adventurers < Formula
   version "1.0.0"
 
   if Hardware::CPU.arm?
-    url "https://github.com/4cecoder/adventurers-harness/releases/download/v1.0.0/Adventurers-macOS-arm64.tar.gz"
+    url "https://github.com/4cecoder/adventurers-harness/releases/download/v#{version}/Adventurers-macOS-arm64.tar.gz"
     sha256 "bf37584c4fc6a8b0cbd68681707cbdfb52fac1be14727ab1343f272a3944d810"
   else
     odie "Adventurers Harness requires Apple Silicon (arm64) macOS."

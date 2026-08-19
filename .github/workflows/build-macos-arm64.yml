@@ -79,6 +79,7 @@ jobs:
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
             VERSION="1.0.0"
           fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           ./scripts/package_app.sh "$VERSION"
 
       - name: Verify Package Contents & Checksums
@@ -117,6 +118,31 @@ jobs:
             dist/Adventurers-macOS-arm64.zip.sha256
             dist/Adventurers-macOS-arm64.tar.gz.sha256
           generate_release_notes: true
+
+      - name: Sync Homebrew Formula & Cask
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          DMG_SHA="$(cut -d' ' -f1 dist/Adventurers-macOS-arm64.dmg.sha256)"
+          TAR_SHA="$(cut -d' ' -f1 dist/Adventurers-macOS-arm64.tar.gz.sha256)"
+          echo "🍺 Syncing Formula/Cask to version ${VERSION} (dmg=${DMG_SHA}, tar=${TAR_SHA})"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin master
+          git checkout -B master origin/master
+
+          sed -i '' "s/^  version \".*\"/  version \"${VERSION}\"/" Formula/adventurers.rb Casks/adventurers.rb
+          sed -i '' "s/^    sha256 \".*\"/    sha256 \"${TAR_SHA}\"/" Formula/adventurers.rb
+          sed -i '' "s/^  sha256 \".*\"/  sha256 \"${DMG_SHA}\"/" Casks/adventurers.rb
+
+          if git diff --quiet -- Formula/adventurers.rb Casks/adventurers.rb; then
+            echo "✔ Formula/Cask already up to date, nothing to commit."
+          else
+            git add Formula/adventurers.rb Casks/adventurers.rb
+            git commit -m "chore(homebrew): sync formula/cask to v${VERSION} [skip ci]"
+            git push origin master
+          fi
 
       - name: Publish Master Rolling Prerelease
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
