@@ -64,6 +64,7 @@ public struct DictationPunctuationFormatter: Sendable {
         let cleanPunctuationPatterns: [(pattern: String, replacement: String)] = [
             (#"\s+([.,!?:;)])"#, "$1"),
             (#"([(])\s+"#, "$1"),
+            (#"([a-zA-Z0-9_]+)\s+\("#, "$1("),
             (#"\n\s+"#, "\n")
         ]
 

@@ -28,7 +28,7 @@ struct DictationTests {
     func codePunctuationReplacements() {
         let formatter = DictationPunctuationFormatter()
 
-        let raw = "function add open paren a colon int comma b colon int close paren arrow int code block return a plus b"
+        let raw = "function add open paren a colon Int comma b colon Int close paren arrow Int code block return a plus b"
         let formatted = formatter.format(rawText: raw)
 
         #expect(formatted.contains("add(a: Int, b: Int) -> Int"))
