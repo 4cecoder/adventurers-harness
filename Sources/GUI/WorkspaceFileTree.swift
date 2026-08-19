@@ -235,7 +235,7 @@ public struct WorkspaceFileTreeView: View {
             .padding(.vertical, 8)
             .background(Color.adElevated.opacity(0.8))
 
-            Divider().overlay(Color.adBorder)
+            Divider().overlay(Color.adDivider)
 
             // File Tree List
             if model.isLoading && model.items.isEmpty {
