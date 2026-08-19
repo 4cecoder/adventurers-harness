@@ -13,7 +13,7 @@ concurrency:
 jobs:
   test-arm64:
     name: Swift Test on Apple Silicon
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 15
 
     steps:

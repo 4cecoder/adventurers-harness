@@ -25,7 +25,7 @@ concurrency:
 jobs:
   build-and-package:
     name: Build macOS Apple Silicon (arm64)
-    runs-on: macos-14 # Native Apple Silicon M-series runner
+    runs-on: macos-15 # Native Apple Silicon M-series runner (macOS 15 Sequoia)
     timeout-minutes: 25
 
     steps:
