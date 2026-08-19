@@ -282,11 +282,6 @@ struct ThreadRowView: View {
                 isHovering = hovering
             }
         }
-        .onAppear {
-            if thread.status == .running {
-                startPulseAnimation()
-            }
-        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(thread.name), \(thread.status.label), by \(thread.agentName)")
         .accessibilityHint("Double click to open thread")
@@ -302,7 +297,6 @@ struct ThreadRowView: View {
             Image(systemName: agentSymbol)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(thread.status.color)
-                .opacity(thread.status == .running ? pulseOpacity : 1.0)
         }
     }
 
@@ -310,7 +304,6 @@ struct ThreadRowView: View {
         Image(systemName: thread.status.symbolName)
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(thread.status.color)
-            .symbolEffect(.variableColor.iterative, isActive: thread.status == .running)
     }
 
     private var agentSymbol: String {
@@ -320,17 +313,6 @@ struct ThreadRowView: View {
         case "designer": return "paintbrush"
         case "auditor":  return "magnifyingglass"
         default:         return "person.fill"
-        }
-    }
-
-    // MARK: - Animation
-
-    private func startPulseAnimation() {
-        withAnimation(
-            .easeInOut(duration: 1.2)
-            .repeatForever(autoreverses: true)
-        ) {
-            pulseOpacity = 0.4
         }
     }
 }

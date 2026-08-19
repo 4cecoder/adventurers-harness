@@ -343,46 +343,16 @@ private struct GateNodeView: View {
     private var glowLayer: some View {
         if node.status == .passed {
             Circle()
-                .fill(Color.green.opacity(0.2))
-                .frame(width: nodeSize + 12, height: nodeSize + 12)
-                .blur(radius: 8)
-                .opacity(pulsePhase ? 0.4 : 0.7)
-                .animation(
-                    .easeInOut(duration: 1.5).repeatForever(autoreverses: true),
-                    value: pulsePhase
-                )
-                .onAppear { pulsePhase = true }
+                .fill(Color.adSuccess.opacity(0.12))
+                .frame(width: nodeSize + 8, height: nodeSize + 8)
         }
     }
 
-    // MARK: - Particle Overlay (passed celebration)
+    // MARK: - Particle Overlay (Empty)
 
     @ViewBuilder
     private var particleOverlay: some View {
-        if node.status == .passed {
-            ForEach(0..<6, id: \.self) { i in
-                Circle()
-                    .fill(Color.green.opacity(0.8))
-                    .frame(width: 3, height: 3)
-                    .offset(
-                        x: cos(Double(i) * .pi / 3) * Double(nodeSize / 2 + 8),
-                        y: sin(Double(i) * .pi / 3) * Double(nodeSize / 2 + 8)
-                    )
-                    .opacity(particleOpacity)
-                    .animation(
-                        .easeOut(duration: 0.6).delay(Double(i) * 0.08),
-                        value: particleOpacity
-                    )
-            }
-            .onAppear {
-                particleOpacity = 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    withAnimation(.easeOut(duration: 0.5)) {
-                        particleOpacity = 0
-                    }
-                }
-            }
-        }
+        EmptyView()
     }
 
     // MARK: - Running Ring

@@ -141,7 +141,6 @@ struct BadgeView: View {
 
 // MARK: - StatusDot
 
-/// A small colored circle indicating status (online, busy, error, etc.).
 struct StatusDot: View {
     let color: Color
     var size: CGFloat = 8
@@ -151,9 +150,7 @@ struct StatusDot: View {
         Circle()
             .fill(color)
             .frame(width: size, height: size)
-            .shadow(color: color.opacity(0.5), radius: 4, x: 0, y: 0)
-            .adPulse(minScale: 0.85, maxScale: 1.15, duration: 1.6)
-            .opacity(isPulsing ? 1 : 1)
+            .shadow(color: color.opacity(0.3), radius: 2, x: 0, y: 0)
     }
 }
 
