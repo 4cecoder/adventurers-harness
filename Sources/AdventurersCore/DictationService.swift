@@ -174,6 +174,8 @@ public final class DictationManager: NSObject, ObservableObject {
     private var prefixText: String = ""
     private var onTextUpdate: ((String) -> Void)?
 
+    private var isTapInstalled: Bool = false
+
     public init(locale: Locale = Locale(identifier: "en-US")) {
         self.speechRecognizer = SFSpeechRecognizer(locale: locale)
         super.init()
@@ -182,7 +184,6 @@ public final class DictationManager: NSObject, ObservableObject {
     // MARK: - Permission Verification
 
     public func checkPermissions() {
-        // Microphone permission
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
             self.hasMicrophonePermission = true
@@ -196,7 +197,6 @@ public final class DictationManager: NSObject, ObservableObject {
             self.hasMicrophonePermission = false
         }
 
-        // Speech recognition permission
         SFSpeechRecognizer.requestAuthorization { authStatus in
             Task { @MainActor in
                 self.hasSpeechPermission = (authStatus == .authorized)
@@ -222,17 +222,65 @@ public final class DictationManager: NSObject, ObservableObject {
         self.onTextUpdate = onUpdate
         self.liveTranscript = ""
 
+        // Check & Request Microphone Permission
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        if micStatus == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    self.hasMicrophonePermission = granted
+                    if granted {
+                        self.startDictation(initialText: initialText, onUpdate: onUpdate)
+                    } else {
+                        self.state = .error("Microphone permission denied.")
+                    }
+                }
+            }
+            return
+        } else if micStatus != .authorized {
+            self.state = .error("Microphone permission denied. Enable in System Settings -> Privacy -> Microphone.")
+            return
+        }
+
+        // Check & Request Speech Recognition Permission
+        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        if speechStatus == .notDetermined {
+            SFSpeechRecognizer.requestAuthorization { [weak self] authStatus in
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    self.hasSpeechPermission = (authStatus == .authorized)
+                    if authStatus == .authorized {
+                        self.startDictation(initialText: initialText, onUpdate: onUpdate)
+                    } else {
+                        self.state = .error("Speech recognition permission denied.")
+                    }
+                }
+            }
+            return
+        } else if speechStatus != .authorized {
+            self.state = .error("Speech recognition denied. Enable in System Settings -> Privacy -> Speech Recognition.")
+            return
+        }
+
         guard let recognizer = speechRecognizer, recognizer.isAvailable else {
             state = .error("Speech recognizer unavailable on this system")
             return
         }
 
         do {
+            stopDictation() // Clean up any previous session
+
             let engine = AVAudioEngine()
             self.audioEngine = engine
 
             let node = engine.inputNode
-            let recordingFormat = node.outputFormat(forBus: 0)
+            let nativeFormat = node.outputFormat(forBus: 0)
+            
+            // Validate audio format sample rate
+            guard nativeFormat.sampleRate > 0 && nativeFormat.channelCount > 0 else {
+                state = .error("Audio input hardware unavailable or sample rate is 0.")
+                return
+            }
 
             let request = SFSpeechAudioBufferRecognitionRequest()
             request.shouldReportPartialResults = true
@@ -262,10 +310,11 @@ public final class DictationManager: NSObject, ObservableObject {
                 }
             }
 
-            node.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            node.installTap(onBus: 0, bufferSize: 1024, format: nativeFormat) { [weak self] buffer, _ in
                 self?.recognitionRequest?.append(buffer)
                 self?.tapHandler.handleBuffer(buffer)
             }
+            self.isTapInstalled = true
 
             engine.prepare()
             try engine.start()
@@ -280,10 +329,18 @@ public final class DictationManager: NSObject, ObservableObject {
     }
 
     public func stopDictation() {
-        guard state.isListening || state == .processing else { return }
+        guard state.isListening || state == .processing || audioEngine != nil else { return }
 
-        audioEngine?.stop()
-        audioEngine?.inputNode.removeTap(onBus: 0)
+        if let engine = audioEngine {
+            if isTapInstalled {
+                engine.inputNode.removeTap(onBus: 0)
+                isTapInstalled = false
+            }
+            if engine.isRunning {
+                engine.stop()
+            }
+        }
+
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
 
