@@ -497,20 +497,24 @@ public final class ThreadViewModel: ObservableObject {
 
             terminalManager?.logCommand("[Agent Dispatch] Provider: \(providerType.rawValue) | Model: \(model)")
 
+            let agentMessageID = UUID().uuidString
+            let placeholder = ThreadMessage(
+                id: agentMessageID,
+                role: .agent,
+                content: "",
+                isStreaming: true
+            )
+            self.appendMessage(placeholder)
+
+            var compoundedToolCalls: [ThreadToolCall] = []
+            var compoundedToolResults: [ThreadToolResult] = []
+            var compoundedReasoning = ""
+
             while maxTurns > 0 && !Task.isCancelled {
                 await self.checkPauseState()
                 guard !Task.isCancelled else { break }
 
                 maxTurns -= 1
-                let agentMessageID = UUID().uuidString
-                let placeholder = ThreadMessage(
-                    id: agentMessageID,
-                    role: .agent,
-                    content: "",
-                    isStreaming: true
-                )
-                self.appendMessage(placeholder)
-
                 var accumulatedContent = ""
                 var accumulatedReasoning = ""
 
@@ -523,6 +527,7 @@ public final class ThreadViewModel: ObservableObject {
 
                         if let reasoning = chunk.reasoningDelta, !reasoning.isEmpty {
                             accumulatedReasoning += reasoning
+                            compoundedReasoning += reasoning
                         }
                         if !chunk.delta.isEmpty {
                             accumulatedContent += chunk.delta
@@ -534,36 +539,52 @@ public final class ThreadViewModel: ObservableObject {
                             exactUsage: chunk.usage
                         )
 
-                        self.updateMessageWithReasoning(
-                            id: agentMessageID,
-                            content: accumulatedContent,
-                            reasoning: accumulatedReasoning.isEmpty ? nil : accumulatedReasoning
-                        )
+                        let cleanLive = self.toolParser.cleanMessageContent(from: accumulatedContent)
+                        if let idx = self.messages.firstIndex(where: { $0.id == agentMessageID }) {
+                            let old = self.messages[idx]
+                            self.messages[idx] = ThreadMessage(
+                                id: old.id,
+                                role: old.role,
+                                content: cleanLive,
+                                timestamp: old.timestamp,
+                                toolCalls: compoundedToolCalls,
+                                toolResults: compoundedToolResults,
+                                isStreaming: true,
+                                thinkingContent: compoundedReasoning.isEmpty ? nil : compoundedReasoning
+                            )
+                        }
                     }
-
-                    self.finishStreaming(messageID: agentMessageID)
-                    finalContent = accumulatedContent
-                    terminalManager?.logOutput("[Agent Output] \(accumulatedContent.count) bytes received.")
 
                     if Task.isCancelled { break }
 
                     // Check for tool calls
                     let toolInvocations = self.extractToolCalls(from: accumulatedContent)
                     if toolInvocations.isEmpty {
-                        // Strip any potential dangling markup from final message
+                        // Final synthesis without further tool calls
                         let cleaned = self.toolParser.cleanMessageContent(from: accumulatedContent)
-                        if !cleaned.isEmpty && cleaned != accumulatedContent {
-                            self.updateMessage(id: agentMessageID, content: cleaned)
+                        self.finishStreaming(messageID: agentMessageID)
+                        if let idx = self.messages.firstIndex(where: { $0.id == agentMessageID }) {
+                            let old = self.messages[idx]
+                            self.messages[idx] = ThreadMessage(
+                                id: old.id,
+                                role: old.role,
+                                content: cleaned.isEmpty ? (compoundedToolCalls.isEmpty ? "" : "Executed \(compoundedToolCalls.count) tool\(compoundedToolCalls.count == 1 ? "" : "s").") : cleaned,
+                                timestamp: old.timestamp,
+                                toolCalls: compoundedToolCalls,
+                                toolResults: compoundedToolResults,
+                                isStreaming: false,
+                                thinkingContent: compoundedReasoning.isEmpty ? nil : compoundedReasoning
+                            )
+                            self.onMessagesChanged?(self.messages)
                         }
-                        break // Done, no more tool calls
+                        finalContent = cleaned
+                        break // Done, multi-turn sequence finished
                     }
 
                     totalToolsExecuted += toolInvocations.count
 
-                    // Execute tools
+                    // Execute tools and compound into unified message
                     var executedToolResults: [String] = []
-                    var threadToolCalls: [ThreadToolCall] = []
-                    var threadToolResults: [ThreadToolResult] = []
 
                     for inv in toolInvocations {
                         await self.checkPauseState()
@@ -580,10 +601,10 @@ public final class ThreadViewModel: ObservableObject {
                             ? .failed(error: result.error!)
                             : .succeeded(output: outputStr)
                         let toolCall = ThreadToolCall(id: tcID, name: inv.name, arguments: inv.argumentsSummary, status: toolStatus)
-                        threadToolCalls.append(toolCall)
+                        compoundedToolCalls.append(toolCall)
 
                         let toolResult = ThreadToolResult(id: trID, toolCallID: tcID, output: outputStr, isError: result.error != nil)
-                        threadToolResults.append(toolResult)
+                        compoundedToolResults.append(toolResult)
 
                         executedToolResults.append("Tool '\(inv.name)' result:\n\(outputStr)")
                         if let err = result.error {
@@ -593,19 +614,19 @@ public final class ThreadViewModel: ObservableObject {
                         }
                     }
 
-                    // Update message with executed tool calls and cleaned text
-                    let cleanedContent = self.toolParser.cleanMessageContent(from: accumulatedContent)
+                    // Update unified message with compounded tool calls
+                    let cleanedInterim = self.toolParser.cleanMessageContent(from: accumulatedContent)
                     if let idx = self.messages.firstIndex(where: { $0.id == agentMessageID }) {
                         let old = self.messages[idx]
                         self.messages[idx] = ThreadMessage(
                             id: old.id,
                             role: old.role,
-                            content: cleanedContent.isEmpty ? "Executed \(threadToolCalls.count) tool\(threadToolCalls.count == 1 ? "" : "s")." : cleanedContent,
+                            content: cleanedInterim,
                             timestamp: old.timestamp,
-                            toolCalls: threadToolCalls,
-                            toolResults: threadToolResults,
-                            isStreaming: false,
-                            thinkingContent: old.thinkingContent
+                            toolCalls: compoundedToolCalls,
+                            toolResults: compoundedToolResults,
+                            isStreaming: true,
+                            thinkingContent: compoundedReasoning.isEmpty ? nil : compoundedReasoning
                         )
                         self.onMessagesChanged?(self.messages)
                     }
@@ -624,6 +645,8 @@ public final class ThreadViewModel: ObservableObject {
                     break
                 }
             }
+
+            self.finishStreaming(messageID: agentMessageID)
 
             if !Task.isCancelled {
                 // Run Deterministic Certification Gates Pipeline

@@ -267,7 +267,7 @@ public final class ThreadStore: Sendable {
             return []
         }
 
-        return threadData.messages.map { pMsg in
+        let loadedMessages = threadData.messages.map { pMsg in
             let role: ThreadMessage.MessageRole
             switch pMsg.role {
             case "user": role = .user
@@ -322,6 +322,9 @@ public final class ThreadStore: Sendable {
                 thinkingContent: pMsg.thinkingContent
             )
         }
+
+        // Retroactively consolidate consecutive multi-turn tool-calling agent messages
+        return ThreadMessageConsolidator.consolidate(loadedMessages)
     }
 
     /// Delete a thread permanently from disk
@@ -481,5 +484,81 @@ public final class ThreadStore: Sendable {
         if let data = try? JSONEncoder().encode(threads.map { $0.id.uuidString }) {
             try? data.write(to: indexFileURL)
         }
+    }
+}
+
+// MARK: - Thread Message Consolidator
+
+/// Consolidates consecutive multi-turn agent messages with tool calls into a single compounded card
+/// for clean, uncluttered UX both dynamically and retroactively.
+public struct ThreadMessageConsolidator {
+    public static func consolidate(_ messages: [ThreadMessage]) -> [ThreadMessage] {
+        guard !messages.isEmpty else { return [] }
+        var result: [ThreadMessage] = []
+        var pendingAgentGroup: [ThreadMessage] = []
+
+        func flushAgentGroup() {
+            guard !pendingAgentGroup.isEmpty else { return }
+            if pendingAgentGroup.count == 1 {
+                result.append(pendingAgentGroup[0])
+            } else {
+                let first = pendingAgentGroup[0]
+                let last = pendingAgentGroup[pendingAgentGroup.count - 1]
+
+                var allToolCalls: [ThreadToolCall] = []
+                var allToolResults: [ThreadToolResult] = []
+                var thinkingParts: [String] = []
+                var contentParts: [String] = []
+
+                for msg in pendingAgentGroup {
+                    allToolCalls.append(contentsOf: msg.toolCalls)
+                    allToolResults.append(contentsOf: msg.toolResults)
+                    if let think = msg.thinkingContent, !think.isEmpty {
+                        thinkingParts.append(think)
+                    }
+                    let trimmed = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty && !trimmed.hasPrefix("Executed ") {
+                        contentParts.append(trimmed)
+                    }
+                }
+
+                let finalContent: String
+                if let lastMeaningful = contentParts.last, !lastMeaningful.isEmpty {
+                    finalContent = lastMeaningful
+                } else if !last.content.isEmpty {
+                    finalContent = last.content
+                } else if !allToolCalls.isEmpty {
+                    finalContent = "Executed \(allToolCalls.count) tool\(allToolCalls.count == 1 ? "" : "s")."
+                } else {
+                    finalContent = ""
+                }
+
+                let mergedThinking = thinkingParts.isEmpty ? nil : thinkingParts.joined(separator: "\n\n")
+
+                let consolidated = ThreadMessage(
+                    id: first.id,
+                    role: .agent,
+                    content: finalContent,
+                    timestamp: last.timestamp,
+                    toolCalls: allToolCalls,
+                    toolResults: allToolResults,
+                    isStreaming: last.isStreaming,
+                    thinkingContent: mergedThinking
+                )
+                result.append(consolidated)
+            }
+            pendingAgentGroup.removeAll()
+        }
+
+        for msg in messages {
+            if msg.role == .agent {
+                pendingAgentGroup.append(msg)
+            } else {
+                flushAgentGroup()
+                result.append(msg)
+            }
+        }
+        flushAgentGroup()
+        return result
     }
 }
