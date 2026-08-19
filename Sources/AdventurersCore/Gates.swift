@@ -141,20 +141,12 @@ public struct MemoryGate: Gate {
     }
 
     public func evaluate(_ output: AgentOutput, context: GateContext) async -> GateResult {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-        nonisolated(unsafe) let taskPort = mach_task_self_
-        let kerr = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                task_info(taskPort, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
-            }
-        }
-
-        if kerr == KERN_SUCCESS {
-            let resident = info.resident_size
-            let residentMB = resident / (1024 * 1024)
+        var usage = rusage()
+        if getrusage(RUSAGE_SELF, &usage) == 0 {
+            let residentBytes = UInt64(usage.ru_maxrss)
+            let residentMB = residentBytes / (1024 * 1024)
             let maxMB = maxResidentBytes / (1024 * 1024)
-            if resident > maxResidentBytes {
+            if residentBytes > maxResidentBytes {
                 return GateResult(
                     passed: false,
                     gateName: name,
