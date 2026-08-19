@@ -425,7 +425,19 @@ struct AdventurersCoreTests {
         let registry = MetaHarnessRegistry.shared
         let profiles = registry.discoverProfiles()
 
-        #expect(profiles.count >= 6)
+        #expect(profiles.count >= 8)
+
+        // Verify Antigravity CLI (agy) profile
+        let agy = profiles.first(where: { $0.type == .antigravity })
+        #expect(agy != nil)
+        #expect(agy?.type.defaultBinaryName == "agy")
+        #expect(agy?.type.defaultEnvKeyName == "GEMINI_API_KEY")
+
+        // Verify Claude Code CLI (claude) profile
+        let claude = profiles.first(where: { $0.type == .claudeCode })
+        #expect(claude != nil)
+        #expect(claude?.type.defaultBinaryName == "claude")
+        #expect(claude?.type.defaultEnvKeyName == "ANTHROPIC_API_KEY")
 
         // Verify standard profiles
         let codex = profiles.first(where: { $0.type == .codex })

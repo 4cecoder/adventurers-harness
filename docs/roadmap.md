@@ -91,7 +91,7 @@
 
 - [x] **Task 1.6: Multi-Agent Meta-Harness Dispatch**
   - **Files**: `Sources/AdventurersCore/MetaHarness.swift`, `Sources/GUI/SettingsView.swift`
-  - **Acceptance Criteria**: Process isolation, custom CLI mappings, and environment variable isolation for `codex`, `hermes`, `opencode`, `dsh`, `pi`, `smallctl`.
+  - **Acceptance Criteria**: Process isolation, custom CLI mappings, and environment variable isolation for `agy` (Google Antigravity), `claude` (Anthropic Claude Code), `codex`, `hermes`, `opencode`, `dsh`, `pi`, `smallctl`.
   - **Microtests**: Passed `metaHarnessRegistryDiscovery`.
 
 - [x] **Task 1.7: In-App GitHub Releases Auto-Updater & Homebrew Packaging**

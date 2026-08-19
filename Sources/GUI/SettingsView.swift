@@ -239,6 +239,14 @@ public final class SettingsModel {
         for idx in metaHarnessProfiles.indices {
             let type = metaHarnessProfiles[idx].type
             switch type {
+            case .antigravity:
+                if let geminiKey = providerKeys[ProviderType.gemini.rawValue] ?? providerKeys["GEMINI_API_KEY"], !geminiKey.isEmpty {
+                    metaHarnessProfiles[idx].apiKey = geminiKey
+                }
+            case .claudeCode:
+                if let anthropicKey = providerKeys[ProviderType.anthropic.rawValue], !anthropicKey.isEmpty {
+                    metaHarnessProfiles[idx].apiKey = anthropicKey
+                }
             case .codex, .smallctl:
                 if let openAIKey = providerKeys[ProviderType.openai.rawValue], !openAIKey.isEmpty {
                     metaHarnessProfiles[idx].apiKey = openAIKey
@@ -346,6 +354,10 @@ public final class SettingsModel {
                     if let entry = (json["zai-coding-plan"] ?? json["zhipuai"]) as? [String: Any] {
                         self.apiKey = entry["key"] as? String ?? ""
                     }
+                case .gemini:
+                    if let entry = (json["gemini"] ?? json["google"]) as? [String: Any] {
+                        self.apiKey = entry["key"] as? String ?? ""
+                    }
                 case .openrouter:
                     if let entry = json["openrouter"] as? [String: Any] {
                         self.apiKey = entry["key"] as? String ?? ""
@@ -437,6 +449,7 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
     case opencode = "OpenCode Go Cloud"
     case opencodeZen = "OpenCode Zen Cloud"
     case glm = "Zhipu / Z.AI GLM"
+    case gemini = "Google Gemini / Antigravity"
     case openrouter = "OpenRouter"
     case anthropic = "Anthropic"
     case deepseek = "DeepSeek"
@@ -448,6 +461,7 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
         case .opencode: return "bolt.badge.clock"
         case .opencodeZen: return "wand.and.stars"
         case .glm: return "cpu.fill"
+        case .gemini: return "atom"
         case .openrouter: return "network"
         case .anthropic: return "cube.transparent"
         case .deepseek: return "bolt.fill"
@@ -461,6 +475,7 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
         case .opencode: return "https://opencode.ai/zen/go/v1"
         case .opencodeZen: return "https://opencode.ai/zen/v1"
         case .glm: return "https://api.z.ai/api/coding/paas/v4"
+        case .gemini: return "https://generativelanguage.googleapis.com/v1beta"
         case .openrouter: return "https://openrouter.ai/api/v1"
         case .anthropic: return "https://api.anthropic.com/v1"
         case .deepseek: return "https://api.deepseek.com/v1"
@@ -474,6 +489,7 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
         case .opencode: return "https://opencode.ai/go"
         case .opencodeZen: return "https://opencode.ai/zen"
         case .glm: return "https://z.ai"
+        case .gemini: return "https://ai.google.dev"
         case .openrouter: return "https://openrouter.ai"
         case .anthropic: return "https://anthropic.com"
         case .deepseek: return "https://deepseek.com"
@@ -1100,10 +1116,12 @@ private struct MetaHarnessSettingsPane: View {
     private func copyMatchingKey(for type: MetaHarnessType) {
         var p = model.profile(for: type)
         switch type {
+        case .antigravity:
+            p.apiKey = model.providerKeys[ProviderType.gemini.rawValue] ?? model.providerKeys["GEMINI_API_KEY"] ?? ""
+        case .claudeCode, .hermes:
+            p.apiKey = model.providerKeys[ProviderType.anthropic.rawValue] ?? ""
         case .codex, .smallctl:
             p.apiKey = model.providerKeys[ProviderType.openai.rawValue] ?? ""
-        case .hermes:
-            p.apiKey = model.providerKeys[ProviderType.anthropic.rawValue] ?? ""
         case .opencode:
             p.apiKey = model.providerKeys[ProviderType.opencode.rawValue] ?? ""
         case .deepseekHarness:
@@ -1428,6 +1446,8 @@ private struct LLMProviderSettingsPane: View {
             return "[Cloud Plan: Zen]"
         case .glm:
             return "[Coding Plan / API]"
+        case .gemini:
+            return "[Gemini / Antigravity Key]"
         case .anthropic, .openai, .deepseek:
             return "[Direct API Key]"
         case .openrouter:

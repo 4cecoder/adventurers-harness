@@ -14,6 +14,8 @@ Adventurers Harness is designed not only as a standalone coding agent, but as a 
 
 | Target Harness | Primary Strength | Default Binary | Injected Env Var |
 |----------------|------------------|----------------|-------------------|
+| **Google Antigravity CLI** | Multi-agent swarms, brain/artifacts system, skill execution, MCP servers | `agy` | `GEMINI_API_KEY` |
+| **Anthropic Claude Code** | Interactive agent loops, fast codebase traversal, subagents, and git integration | `claude` | `ANTHROPIC_API_KEY` |
 | **OpenAI Codex CLI** | Rust-based gate-certified execution with deterministic contracts | `codex` | `CODEX_API_KEY` |
 | **Nous Hermes Agent** | Staged reflection with persistent episodic memory & learning loop | `hermes` | `HERMES_API_KEY` |
 | **OpenCode CLI** | Go-based multi-provider coding agent with LSP and SQLite sessions | `opencode` | `OPENCODE_API_KEY` |

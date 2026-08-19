@@ -42,6 +42,8 @@ public enum ExecutionMode: String, CaseIterable, Sendable, Codable {
 public enum MetaHarnessType: String, CaseIterable, Sendable, Codable, Identifiable {
     public var id: String { rawValue }
 
+    case antigravity = "Google Antigravity CLI (agy)"
+    case claudeCode = "Anthropic Claude Code CLI (claude)"
     case codex = "OpenAI Codex CLI"
     case hermes = "Nous Hermes Agent"
     case opencode = "OpenCode CLI"
@@ -52,6 +54,8 @@ public enum MetaHarnessType: String, CaseIterable, Sendable, Codable, Identifiab
 
     public var icon: String {
         switch self {
+        case .antigravity: return "atom"
+        case .claudeCode: return "brain.head.profile"
         case .codex: return "cpu"
         case .hermes: return "sparkles"
         case .opencode: return "terminal.fill"
@@ -64,6 +68,8 @@ public enum MetaHarnessType: String, CaseIterable, Sendable, Codable, Identifiab
 
     public var defaultBinaryName: String {
         switch self {
+        case .antigravity: return "agy"
+        case .claudeCode: return "claude"
         case .codex: return "codex"
         case .hermes: return "hermes"
         case .opencode: return "opencode"
@@ -76,6 +82,8 @@ public enum MetaHarnessType: String, CaseIterable, Sendable, Codable, Identifiab
 
     public var defaultEnvKeyName: String {
         switch self {
+        case .antigravity: return "GEMINI_API_KEY"
+        case .claudeCode: return "ANTHROPIC_API_KEY"
         case .codex: return "CODEX_API_KEY"
         case .hermes: return "HERMES_API_KEY"
         case .opencode: return "OPENCODE_API_KEY"
@@ -88,6 +96,10 @@ public enum MetaHarnessType: String, CaseIterable, Sendable, Codable, Identifiab
 
     public var description: String {
         switch self {
+        case .antigravity:
+            return "Google Antigravity CLI (agy) featuring multi-agent swarms, brain/artifacts system, skill execution, MCP servers, and subagent orchestration."
+        case .claudeCode:
+            return "Anthropic Claude Code CLI with interactive terminal agent capabilities, fast codebase exploration, subagent architecture, and git integration."
         case .codex:
             return "Rust-based gate-certified execution engine with native LSP support and deterministic contracts."
         case .hermes:
@@ -244,7 +256,18 @@ public final class MetaHarnessRunner: Sendable {
 
         let escapedPrompt = prompt.replacingOccurrences(of: "'", with: "'\\''")
         let customArgsJoined = profile.customArgs.joined(separator: " ")
-        let commandLine = "\(profile.binaryPath) \(customArgsJoined) '\(escapedPrompt)'"
+        
+        let commandLine: String
+        if !customArgsJoined.isEmpty {
+            commandLine = "\(profile.binaryPath) \(customArgsJoined) '\(escapedPrompt)'"
+        } else {
+            switch profile.type {
+            case .claudeCode, .antigravity, .hermes:
+                commandLine = "\(profile.binaryPath) -p '\(escapedPrompt)'"
+            default:
+                commandLine = "\(profile.binaryPath) '\(escapedPrompt)'"
+            }
+        }
 
         process.arguments = ["-c", commandLine]
         process.standardOutput = pipe
