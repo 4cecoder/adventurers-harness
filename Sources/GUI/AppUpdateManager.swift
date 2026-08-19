@@ -121,6 +121,15 @@ public final class AppUpdateManager: NSObject, URLSessionDownloadDelegate {
         }
     }
 
+    public var isBusy: Bool {
+        switch status {
+        case .checking, .downloading:
+            return true
+        default:
+            return false
+        }
+    }
+
     public var releasesURL: URL {
         URL(string: "https://github.com/\(repoOwner)/\(repoName)/releases")!
     }
@@ -434,7 +443,7 @@ public struct UpdateModalView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain)
-                        .disabled(updateManager.status == .checking || (if case .downloading = updateManager.status { true } else { false }))
+                        .disabled(updateManager.isBusy)
                     }
                 }
                 .padding(.horizontal, 18)

@@ -438,6 +438,7 @@ struct ContentView: View {
                 }
                 .help("Toggle Inspector (⌘I)")
             }
+        }
         .sheet(isPresented: Bindable(appState).showsCommandPalette) {
             CommandPaletteModal()
         }
