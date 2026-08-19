@@ -1475,6 +1475,87 @@ private struct GeneralSettingsPane: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
 
+            // Software Updates Card
+            VStack(alignment: .leading, spacing: 10) {
+                Text("SOFTWARE UPDATES & RELEASES")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color.adOrange)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Adventurers Harness v\(AppUpdateManager.shared.currentVersion) (\(AppUpdateManager.shared.currentBuild))")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.adTextPrimary)
+
+                        if case .checking = AppUpdateManager.shared.status {
+                            Text("Checking GitHub releases...")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.adTextSecondary)
+                        } else if case .updateAvailable(let rel) = AppUpdateManager.shared.status {
+                            Text("🚀 Update available: v\(rel.versionString)")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.adSuccess)
+                        } else if case .upToDate = AppUpdateManager.shared.status {
+                            Text("✓ Up to date (Latest release on GitHub)")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.adSuccess)
+                        } else if case .failed(let err) = AppUpdateManager.shared.status {
+                            Text("⚠️ \(err)")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.adWarning)
+                        } else {
+                            Text("Public repository: github.com/\(AppUpdateManager.shared.repoOwner)/\(AppUpdateManager.shared.repoName)")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.adTextTertiary)
+                        }
+                    }
+
+                    Spacer()
+
+                    if case .updateAvailable = AppUpdateManager.shared.status {
+                        Button("Update Now") {
+                            AppUpdateManager.shared.showsUpdateModal = true
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.black)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.adOrange)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    } else {
+                        Button {
+                            AppUpdateManager.shared.checkForUpdates(silent: false)
+                        } label: {
+                            HStack(spacing: 4) {
+                                if case .checking = AppUpdateManager.shared.status {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Image(systemName: "arrow.clockwise")
+                                }
+                                Text("Check for Updates")
+                            }
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.adTextPrimary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.adElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(AppUpdateManager.shared.status == .checking)
+                    }
+                }
+                .padding(14)
+                .background(Color.adCard)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+            }
+
             VStack(alignment: .leading, spacing: 10) {
                 Text("SHELL & DATA PATHS")
                     .font(.system(size: 10, weight: .bold))

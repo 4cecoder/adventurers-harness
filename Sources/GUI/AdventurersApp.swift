@@ -438,9 +438,16 @@ struct ContentView: View {
                 }
                 .help("Toggle Inspector (⌘I)")
             }
-        }
         .sheet(isPresented: Bindable(appState).showsCommandPalette) {
             CommandPaletteModal()
+        }
+        .sheet(isPresented: Bindable(AppUpdateManager.shared).showsUpdateModal) {
+            UpdateModalView()
+        }
+        .onAppear {
+            if appState.settingsModel.checkUpdatesOnLaunch {
+                AppUpdateManager.shared.checkForUpdates(silent: true)
+            }
         }
     }
 }
@@ -1221,6 +1228,12 @@ struct AgentCommands: Commands {
     let appState: AppState
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates...") {
+                AppUpdateManager.shared.checkForUpdates(silent: false)
+            }
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("New Thread") {
                 appState.createThread()

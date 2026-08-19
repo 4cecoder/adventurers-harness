@@ -126,6 +126,30 @@ struct WorkbenchStatusBar: View {
 
             // Gates Status Chip
             gatesChip
+
+            if AppUpdateManager.shared.isUpdateAvailable {
+                Text("•")
+                    .font(.system(size: 8))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                Button {
+                    AppUpdateManager.shared.showsUpdateModal = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 9))
+                        Text("Update Available")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundStyle(Color.adOrange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.adOrange.opacity(0.18))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+                .help("A new version of Adventurers Harness is available on GitHub")
+            }
         }
     }
 
