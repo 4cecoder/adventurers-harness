@@ -465,13 +465,13 @@ public final class ThreadViewModel: ObservableObject {
                 apiKey: apiKey
             )
 
-            let judgerDecision = TaskJudgerEngine.shared.evaluate(prompt: userText)
+            let judgerDecision = TaskJudgerEngine.shared.evaluate(prompt: text)
             var maxTurns = judgerDecision.recommendedTurnBudget
 
             if judgerDecision.shouldInitializeTaskContract, let threadUUID = self.threadID {
                 self.activeContract = LongHorizonTaskContract(
                     id: threadUUID,
-                    goal: userText,
+                    goal: text,
                     currentPhase: .planning,
                     turnBudget: judgerDecision.recommendedTurnBudget
                 )
