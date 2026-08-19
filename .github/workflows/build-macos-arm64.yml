@@ -102,7 +102,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish GitHub Release
+      - name: Publish Versioned GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
@@ -117,3 +117,34 @@ jobs:
             dist/Adventurers-macOS-arm64.zip.sha256
             dist/Adventurers-macOS-arm64.tar.gz.sha256
           generate_release_notes: true
+
+      - name: Publish Master Rolling Prerelease
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Adventurers Harness Latest (macOS Apple Silicon)
+          draft: false
+          prerelease: true
+          make_latest: true
+          files: |
+            dist/Adventurers-macOS-arm64.dmg
+            dist/Adventurers-macOS-arm64.zip
+            dist/Adventurers-macOS-arm64.tar.gz
+            dist/Adventurers-macOS-arm64.dmg.sha256
+            dist/Adventurers-macOS-arm64.zip.sha256
+            dist/Adventurers-macOS-arm64.tar.gz.sha256
+          body: |
+            ### Automated Continuous Build (macOS ARM64)
+            Built from commit `${{ github.sha }}` on `master`.
+
+            #### Download Links
+            - **[Adventurers-macOS-arm64.dmg](https://github.com/4cecoder/adventurers-harness/releases/download/latest/Adventurers-macOS-arm64.dmg)** (Disk Image Installer)
+            - **[Adventurers-macOS-arm64.zip](https://github.com/4cecoder/adventurers-harness/releases/download/latest/Adventurers-macOS-arm64.zip)** (Portable App Bundle)
+            - **[Adventurers-macOS-arm64.tar.gz](https://github.com/4cecoder/adventurers-harness/releases/download/latest/Adventurers-macOS-arm64.tar.gz)** (Homebrew Tarball)
+            
+            #### Homebrew Installation
+            ```bash
+            brew tap 4cecoder/adventurers https://github.com/4cecoder/adventurers-harness
+            brew install adventurers
+            ```
