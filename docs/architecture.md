@@ -1,140 +1,100 @@
-# Architecture
+# Adventurers Harness Architecture
 
 ## Overview
 
-Adventurers Harness is a native macOS application written in Swift 6 that serves as a coding agent harness. It manages multiple AI coding agents running in parallel, providing a unified interface for task management, code review, and agent orchestration.
+Adventurers Harness is a native macOS application written in Swift 6 that serves as a deterministic coding agent harness and multi-harness dispatcher. It manages multiple AI coding agents running in parallel, providing a unified interface for task orchestration, code review, sandbox security, and programmatic gate certification.
+
+---
+
+## Documentation Index
+
+- [**Harness Engineering Guide**](harness-engineering-guide.md) — Comprehensive principles for reliable coding agent harnesses.
+- [**Meta-Harness Dispatcher**](meta-harness-dispatch.md) — Multi-agent CLI orchestration and credential isolation.
+- [**Gate Certification System**](gates.md) — The 6-gate deterministic verification pipeline.
+- [**Real-Time Telemetry & Metering**](telemetry-and-metering.md) — Rolling TPS tracking, TTFT metrics, and cost estimation.
+- [**UI Design System**](design-system.md) — Obsidian theme, liquid glass components, and typography.
+- [**Reference Projects**](reference-projects.md) — Architectural taxonomy of leading agent implementations.
+
+---
 
 ## Core Philosophy
 
 **The model proposes. The harness certifies.**
 
-This is borrowed from the autoreverse project. The LLM never decides when a task is complete. Instead, a pipeline of deterministic gates (syntax checking, repeat detection, compilation, structural verification) certifies completion. This prevents hallucinated "I'm done" states.
+The LLM never decides when a task is complete. Instead, a pipeline of deterministic gates (syntax checking, repeat detection, compilation, structural verification, path safety) certifies completion. This completely prevents hallucinated completion states.
+
+---
 
 ## Module Architecture
 
-### AdventurersCore
+### 1. `AdventurersCore`
+The central execution engine:
+- **`AgentLoop`**: The propose → gate → certify execution cycle.
+- **`MetaHarness`**: Dispatcher for external CLI agents (`codex`, `hermes`, `opencode`, `dsh`, `pi`, `smallctl`).
+- **`TaskContract`**: Immutable task boundaries with round budgets.
+- **`StateEngine`**: Finite state machine with strictly enforced transitions.
+- **`Gates`**: Deterministic verification checks (`SyntaxGate`, `RepeatGate`, `CompilationGate`, `DiffGate`, `MemoryGate`, `ObjectiveGate`).
+- **`FailChain`**: Escalating capsule feedback for repeated failures.
+- **`EventJournal`**: Append-only JSONL event ledger for replay and debugging.
+- **`DiffEngine`**: Unified and side-by-side patch computation and atomic file application.
+- **`DarwinSandbox`**: Kernel-level Seatbelt sandboxing via `sandbox-exec` profiles.
+- **`TrajectoryCompressor`**: Context compaction preserving task anchors and summarizing execution traces.
+- **`MeteringTelemetry`**: Token throughput accounting, pricing schedules, and context headroom gauges.
 
-The heart of the harness. Contains:
+### 2. `GUI`
+Native macOS SwiftUI 6 application:
+- **`AdventurersApp`**: Three-panel workbench layout (sidebar, editor/thread, inspector).
+- **`ThreadListView`**: Parallel multi-agent thread management.
+- **`ThreadView`**: Streaming chat, code blocks, diff viewer, and quick mode switcher.
+- **`WorkbenchStatusBar`**: Real-time rolling TPS, TTFT latency, active engine chip, and context headroom meter.
+- **`GateProgressView`**: Live gate certification visualization.
+- **`SettingsView`**: Settings modal with dedicated Execution Mode, Coding Plan Keys, and Meta-Harness CLI tabs.
+- **`TerminalOutputView`**: Full-width adaptive terminal stream.
 
-- **Protocols**: `LLMProvider`, `Tool`, `Gate` — protocol-oriented abstractions
-- **AgentLoop**: The propose → gate → certify execution cycle
-- **TaskContract**: Immutable task boundaries with round budgets
-- **StateEngine**: Finite state machine with enforced transitions
-- **Gates**: Deterministic certification checks
-- **FailChain**: Escalating capsule feedback for repeated failures
-- **EventJournal**: Append-only JSONL event store
+### 3. `LLMProviders`
+Frontier cloud provider client with native Server-Sent Events (SSE) streaming and tool call parsing for OpenCode, Anthropic, OpenAI, DeepSeek, Z.AI GLM, and OpenRouter.
 
-### GUI
+### 4. `Tools`
+Built-in sandboxed tools: `bash`, `view_file`, `write_file`, `edit_file`, `list_dir`, `grep_search`, `glob`.
 
-Native macOS SwiftUI application with:
-
-- Three-panel layout (sidebar, content, inspector)
-- Thread-based multi-agent management
-- Real-time gate progress visualization
-- Diff review (side-by-side and unified)
-- Skills library management
-- Permission system for tool execution
-
-### LLMProviders
-
-Provider abstraction layer supporting OpenAI, Anthropic, local models, and CLI-wrapped agents.
-
-### Tools
-
-Built-in tools: bash execution, file operations, grep, glob, fetch.
+---
 
 ## Data Flow
 
 ```
-User Input
-    ↓
-AgentLoop.execute(task)
-    ↓
-┌─→ LLMProvider.send(messages) ──→ Response
-│   ↓
-│   Tool execution (if tool calls)
-│   ↓
-│   Gate evaluation (deterministic)
-│   ├── SyntaxGate: balanced braces/parens
-│   ├── RepeatGate: reject identical submissions
-│   ├── CompilationGate: compile check
-│   ├── MemoryGate: address validation
-│   └── ObjectiveGate: structural verification
-│   ↓
-│   All gates passed? → YES → TaskResult.success
-│   ↓ NO
-│   FailChain.mitigate() → escalating feedback
-│   ↓
-└─── Loop back to LLMProvider
+User Input / Task Contract
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     Execution Mode Router                   │
+└──────────────┬───────────────────────────────┬──────────────┘
+               │                               │
+       [Coding Plan Mode]              [Meta Harness Mode]
+               │                               │
+               ▼                               ▼
+    UniversalCloudProvider             MetaHarnessRunner
+     (Direct API Stream)              (CLI Subprocess Pipe)
+               │                               │
+               └───────────────┬───────────────┘
+                               │
+                               ▼
+                    Sandboxed Tool Execution
+                               │
+                               ▼
+               Deterministic Gate Certification
+               ├── SyntaxGate (Balanced code blocks)
+               ├── RepeatGate (SHA-256 loop prevention)
+               ├── DiffGate (Path security & destructive check)
+               ├── CompilationGate (Native toolchain check)
+               ├── MemoryGate (Domain boundaries)
+               └── ObjectiveGate (AST structural metrics)
+                               │
+               ┌───────────────┴───────────────┐
+               ▼                               ▼
+        All Gates Pass?                  Gate Failed?
+               │                               │
+         [SUCCESS]                     [FAIL-CHAIN]
+     Certify & Finalize              Escalate Feedback
+                                      & Loop back to Model
 ```
 
-## State Machine
-
-```
-idle → taskingested → proposing → validatingSyntax → compiling → executingTest → verified
-                ↓           ↓              ↓              ↓            ↓
-              failed      failed        retrying       retrying     retrying
-                ↓           ↓              ↓              ↓            ↓
-              idle        idle          proposing      proposing    proposing
-```
-
-## Design Patterns
-
-### Protocol-Oriented Abstraction
-
-Both LLM providers and tools are defined as protocols. This allows:
-- Multiple implementations per protocol
-- Compile-time conformance checking
-- Easy testing with mock implementations
-
-### Factory / Registry
-
-Providers are created from configuration via a registry pattern. The registry maps provider names to concrete types.
-
-### Contract-Based Budget Control
-
-`TaskContract` defines maximum rounds, required gates, and task metadata. It is immutable during execution. The `bumpRound()` method throws when budget is exhausted.
-
-### Event Journal
-
-Every phase transition, gate check, and model turn is logged as a structured JSONL event. This enables replay, debugging, and analytics.
-
-### Escalating Capsule Feedback
-
-When the same gate fails repeatedly, the feedback escalates in severity:
-1. First failure: gentle hint
-2. Second: stern directive
-3. Third+: critical escalation with specific fix instructions
-
-## UI Architecture
-
-### Three-Panel Layout
-
-```
-┌─────────────┬──────────────────────┬─────────────┐
-│             │                      │             │
-│  Sidebar    │    Content Area      │  Inspector  │
-│  (Threads)  │  (Chat / Diff /      │  (Gates /   │
-│             │   Code Review)       │   Tools)    │
-│             │                      │             │
-└─────────────┴──────────────────────┴─────────────┘
-```
-
-### Thread Management
-
-Each agent task runs in its own thread. Threads are organized by status (active/completed) and can be created, renamed, duplicated, and exported.
-
-### Gate Progress Visualization
-
-Real-time horizontal progress bar showing each gate's status:
-- Pending (gray) → Running (orange pulse) → Passed (green glow) or Failed (red shake)
-- All gates passed triggers a celebration animation
-
-### Permission System
-
-Tool execution requires permission based on risk level:
-- **readOnly**: Auto-approved (grep, glob, ls)
-- **network**: Prompt for approval (fetch, search)
-- **write**: Prompt for approval (file edit, patch)
-- **execute**: Prompt with countdown (bash, shell)
-- **destructive**: Always prompt (force push, rm -rf)
