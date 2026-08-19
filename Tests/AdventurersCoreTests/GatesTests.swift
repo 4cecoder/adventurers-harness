@@ -41,11 +41,11 @@ struct GatesTests {
         let turn1 = AgentOutput(content: "First plan", toolCalls: [], turnIndex: 1, timestamp: Date())
         let turn2 = AgentOutput(content: "First plan", toolCalls: [], turnIndex: 2, timestamp: Date())
 
-        let ctx1 = GateContext(taskID: "task-1", contract: contract, previousOutputs: [])
+        let ctx1 = GateContext(taskID: "task-1", contract: contract, previousOutputs: [turn1])
         let res1 = await gate.evaluate(turn1, context: ctx1)
         #expect(res1.passed == true)
 
-        let ctx2 = GateContext(taskID: "task-1", contract: contract, previousOutputs: [turn1])
+        let ctx2 = GateContext(taskID: "task-1", contract: contract, previousOutputs: [turn1, turn2])
         let res2 = await gate.evaluate(turn2, context: ctx2)
         #expect(res2.passed == false)
     }

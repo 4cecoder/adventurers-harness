@@ -80,9 +80,9 @@ public final class AlignmentGriller: Sendable {
         }
 
         // 2. High Ambiguity & Destructive Overhaul Signals
-        if (lower.contains("rewrite everything") || lower.contains("clean up the whole codebase") || lower.contains("make it better")) && trimmed.count < 60 {
+        if (lower == "fix it" || lower.hasPrefix("fix it") || lower == "do it" || lower.contains("rewrite everything") || lower.contains("clean up the whole codebase") || lower.contains("make it better")) && trimmed.count < 60 {
             let probe = ClarificationProbe(
-                question: "The scope 'make it better / clean up codebase' is broad. Which area should be targeted first?",
+                question: "The request is broad or underspecified. Which area should be targeted first?",
                 options: [
                     "Refactor core data models and state management",
                     "Improve error handling and unit test coverage",
