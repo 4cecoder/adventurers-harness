@@ -216,20 +216,24 @@ public struct MessageInputBar: View {
                 // Native Glass Text input
                 textEditor
 
-                // Talkies Minimal Single-Button Dictation
-                dictationButton
+                // Trailing Action Buttons (Dictation, Pause, Stop, Send)
+                HStack(spacing: 8) {
+                    // Talkies Minimal Single-Button Dictation
+                    dictationButton
 
-                // Execution Controls (Pause, Stop, Send / Queue)
-                if isGenerating {
-                    // Pause / Resume Button
-                    pauseButton
+                    // Execution Controls (Pause, Stop, Send / Queue)
+                    if isGenerating {
+                        // Pause / Resume Button
+                        pauseButton
 
-                    // Stop Button
-                    stopButton
+                        // Stop Button
+                        stopButton
+                    }
+
+                    // Primary Send / Queue Action Button
+                    primaryActionButton
                 }
-
-                // Primary Send / Queue Action Button
-                primaryActionButton
+                .fixedSize()
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -413,14 +417,14 @@ public struct MessageInputBar: View {
         if dictation.state.isListening {
             return Color.red.opacity(0.95)
         }
-        return hoverDictate ? Color.adElevated : Color.adCard.opacity(0.9)
+        return hoverDictate ? Color.adOrange.opacity(0.25) : Color.adOrange.opacity(0.12)
     }
 
     private var dictationButtonForeground: Color {
         if dictation.state.isListening {
             return Color.white
         }
-        return hoverDictate ? Color.white : Color.adOrange
+        return Color.adOrange
     }
 
     @ViewBuilder
