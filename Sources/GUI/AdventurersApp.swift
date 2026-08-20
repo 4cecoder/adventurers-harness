@@ -103,8 +103,8 @@ final class AppState {
     /// Thread view models keyed by ThreadItem ID.
     var threadViewModels: [UUID: ThreadViewModel] = [:]
 
-    /// Diff view states keyed by ThreadItem ID.
-    var diffStates: [UUID: DiffViewerState] = [:]
+    /// Diff view states keyed by normalized workspace path.
+    var workspaceDiffStates: [String: DiffViewerState] = [:]
 
     /// Gate pipeline states keyed by ThreadItem ID.
     var gateStates: [UUID: GatePipelineState] = [:]
@@ -141,6 +141,11 @@ final class AppState {
         return threads.first { $0.id == id }
     }
 
+    var currentWorkspacePath: String {
+        let raw = selectedThread?.workingDirectory ?? WorkspaceConfig.defaultWorkspacePath
+        return (raw as NSString).standardizingPath
+    }
+
     var currentThreadViewModel: ThreadViewModel {
         guard let item = selectedThread else {
             return ThreadViewModel()
@@ -175,14 +180,13 @@ final class AppState {
     }
 
     var currentDiffState: DiffViewerState {
-        guard let id = selectedThread?.id else {
-            return createSampleDiffState()
-        }
-        if let existing = diffStates[id] {
+        let path = currentWorkspacePath
+        if let existing = workspaceDiffStates[path] {
             return existing
         }
-        let state = createSampleDiffState()
-        diffStates[id] = state
+        let state = DiffViewerState(workspacePath: path)
+        workspaceDiffStates[path] = state
+        state.loadLiveGitDiff(workspacePath: path)
         return state
     }
 
@@ -1200,6 +1204,7 @@ struct WorkbenchContentView: View {
                             .id(appState.selectedThread?.id)
                     case .diff:
                         DiffViewer(state: appState.currentDiffState)
+                            .id(appState.currentWorkspacePath)
                     case .terminal:
                         TerminalOutputView(manager: appState.terminalManager)
                     case .skills:

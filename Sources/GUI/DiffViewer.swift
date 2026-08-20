@@ -208,6 +208,7 @@ public struct DiffStats: Sendable {
 
 @MainActor
 public final class DiffViewerState: ObservableObject {
+    public var workspacePath: String
     @Published public var files: [DiffFile]
     @Published public var selectedFileID: UUID?
     @Published public var viewMode: DiffViewMode
@@ -221,6 +222,7 @@ public final class DiffViewerState: ObservableObject {
     public var onDiscard: ((DiffHunk) -> Void)?
 
     public init(
+        workspacePath: String = WorkspaceConfig.defaultWorkspacePath,
         files: [DiffFile] = [],
         viewMode: DiffViewMode = .sideBySide,
         searchQuery: String = "",
@@ -230,6 +232,7 @@ public final class DiffViewerState: ObservableObject {
         onApply: ((DiffHunk) -> Void)? = nil,
         onDiscard: ((DiffHunk) -> Void)? = nil
     ) {
+        self.workspacePath = workspacePath
         self.files = files
         self.selectedFileID = files.first?.id
         self.viewMode = viewMode
@@ -273,15 +276,19 @@ public final class DiffViewerState: ObservableObject {
         selectedFileID = files[prevIdx].id
     }
 
-    /// Loads actual git working directory diffs
-    public func loadLiveGitDiff(workspacePath: String = FileManager.default.currentDirectoryPath) {
+    /// Loads actual git working directory diffs for the associated workspace
+    public func loadLiveGitDiff(workspacePath: String? = nil) {
+        if let path = workspacePath {
+            self.workspacePath = path
+        }
+        let targetPath = self.workspacePath
         Task {
             self.isLoadingLiveDiff = true
             let process = Process()
             let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
             process.arguments = ["diff", "HEAD", "--no-color"]
-            process.currentDirectoryURL = URL(fileURLWithPath: workspacePath)
+            process.currentDirectoryURL = URL(fileURLWithPath: targetPath)
             process.standardOutput = pipe
 
             do {
@@ -290,15 +297,17 @@ public final class DiffViewerState: ObservableObject {
                 process.waitUntilExit()
                 if let rawDiff = String(data: data, encoding: .utf8), !rawDiff.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     let parsed = GitDiffParser.parse(rawDiff)
-                    if !parsed.isEmpty {
-                        self.files = parsed
-                        if self.selectedFileID == nil || !parsed.contains(where: { $0.id == self.selectedFileID }) {
-                            self.selectedFileID = parsed.first?.id
-                        }
+                    self.files = parsed
+                    if self.selectedFileID == nil || !parsed.contains(where: { $0.id == self.selectedFileID }) {
+                        self.selectedFileID = parsed.first?.id
                     }
+                } else {
+                    self.files = []
+                    self.selectedFileID = nil
                 }
             } catch {
-                // If git fails, preserve existing seeded diffs
+                self.files = []
+                self.selectedFileID = nil
             }
             self.isLoadingLiveDiff = false
         }

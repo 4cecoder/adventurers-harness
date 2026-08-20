@@ -172,7 +172,7 @@ public final class DictationManager: NSObject, ObservableObject {
     private var levelTimer: Timer?
     private var silenceTimer: Timer?
     private var prefixText: String = ""
-    private var onTextUpdate: ((String) -> Void)?
+    private var onTextUpdate: (@Sendable (String) -> Void)?
 
     private var isTapInstalled: Bool = false
 
@@ -206,7 +206,7 @@ public final class DictationManager: NSObject, ObservableObject {
 
     // MARK: - Dictation Control
 
-    public func toggleDictation(currentText: String, onUpdate: @escaping (String) -> Void) {
+    public func toggleDictation(currentText: String, onUpdate: @escaping @Sendable (String) -> Void) {
         if state.isListening {
             stopDictation()
         } else {
@@ -214,7 +214,7 @@ public final class DictationManager: NSObject, ObservableObject {
         }
     }
 
-    public func startDictation(initialText: String, onUpdate: @escaping (String) -> Void) {
+    public func startDictation(initialText: String, onUpdate: @escaping @Sendable (String) -> Void) {
         guard !state.isListening else { return }
 
         // Store baseline text to append smoothly
