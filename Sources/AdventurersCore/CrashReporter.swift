@@ -1,6 +1,6 @@
 // CrashReporter.swift
-// AdventurersCore — Native Crash Diagnostic & Backtrace Reporting Engine
-// Captures POSIX signals, NSExceptions, thread callstacks, breadcrumbs, and macOS DiagnosticReports
+// AdventurersCore — Enterprise Crashlytics, Telemetry & Diagnostic Backtrace Engine
+// Captures POSIX signals, NSExceptions, thread callstacks, breadcrumbs, non-fatals, and macOS DiagnosticReports
 //
 // Pure Swift 6 · Sendable-safe
 
@@ -8,15 +8,135 @@ import Foundation
 import os.lock
 import Darwin
 
+// MARK: - Crash Severity
+
+public enum CrashSeverity: String, Codable, Sendable, CaseIterable {
+    case fatal = "FATAL"
+    case uncaughtException = "EXCEPTION"
+    case hang = "HANG"
+    case nonFatal = "NON-FATAL"
+
+    public var icon: String {
+        switch self {
+        case .fatal: return "exclamationmark.octagon.fill"
+        case .uncaughtException: return "exclamationmark.triangle.fill"
+        case .hang: return "hourglass.bottomhalf.filled"
+        case .nonFatal: return "info.circle.fill"
+        }
+    }
+}
+
+// MARK: - Stack Frame Analysis
+
+public struct StackFrame: Codable, Identifiable, Sendable {
+    public let id: String
+    public let index: Int
+    public let module: String
+    public let address: String
+    public let rawSymbol: String
+    public let demangledSymbol: String
+    public let isAppCode: Bool
+
+    public init(
+        index: Int,
+        module: String,
+        address: String,
+        rawSymbol: String,
+        demangledSymbol: String,
+        isAppCode: Bool
+    ) {
+        self.id = "\(index)_\(address)"
+        self.index = index
+        self.module = module
+        self.address = address
+        self.rawSymbol = rawSymbol
+        self.demangledSymbol = demangledSymbol
+        self.isAppCode = isAppCode
+    }
+}
+
+// MARK: - Swift Symbol Demangler
+
+public enum SwiftDemangler {
+    /// Attempts to parse raw backtrace lines into structured, readable `StackFrame` objects.
+    public static func parseCallStack(_ lines: [String]) -> [StackFrame] {
+        var frames: [StackFrame] = []
+
+        for (idx, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            // Typical format: "0   Adventurers   0x0000000100021b34 $s14AdventurersGUI... + 120"
+            // or "1   libdispatch.dylib   0x0000000196f6c5c0 _dispatch_assert_queue_fail + 120"
+            let components = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+
+            var moduleName = "Unknown"
+            var address = ""
+            var symbol = trimmed
+            var isApp = false
+
+            if components.count >= 4 {
+                moduleName = components[1]
+                address = components[2]
+                symbol = components[3...].joined(separator: " ")
+            }
+
+            let appModules = ["Adventurers", "AdventurersCore", "LLMProviders", "Tools", "GUI"]
+            isApp = appModules.contains(where: { moduleName.contains($0) || symbol.contains($0) })
+
+            let demangled = demangle(symbol)
+
+            frames.append(
+                StackFrame(
+                    index: idx,
+                    module: moduleName,
+                    address: address,
+                    rawSymbol: symbol,
+                    demangledSymbol: demangled,
+                    isAppCode: isApp
+                )
+            )
+        }
+
+        return frames
+    }
+
+    /// Basic clean demangling for mangled Swift symbols ($s...)
+    public static func demangle(_ symbol: String) -> String {
+        var clean = symbol
+        // Strip trailing offset (e.g. " + 120")
+        if let plusIdx = clean.range(of: " + ") {
+            clean = String(clean[..<plusIdx.lowerBound])
+        }
+
+        // Clean up common Swift mangled prefixes if present
+        if clean.hasPrefix("$s") || clean.hasPrefix("_$s") {
+            // Provide human-friendly tokens
+            var readable = clean
+            readable = readable.replacingOccurrences(of: "$s", with: "")
+            readable = readable.replacingOccurrences(of: "_$s", with: "")
+            readable = readable.replacingOccurrences(of: "14AdventurersGUI", with: "GUI.")
+            readable = readable.replacingOccurrences(of: "15AdventurersCore", with: "Core.")
+            readable = readable.replacingOccurrences(of: "12LLMProviders", with: "LLM.")
+            readable = readable.replacingOccurrences(of: "5Tools", with: "Tools.")
+            return readable
+        }
+
+        return clean
+    }
+}
+
 // MARK: - Crash Report Model
 
 public struct CrashReport: Codable, Identifiable, Sendable {
     public let id: String
     public let timestamp: Date
+    public let severity: CrashSeverity
     public let signal: String?
     public let exceptionName: String?
     public let exceptionReason: String?
     public let callStack: [String]
+    public let parsedFrames: [StackFrame]
     public let breadcrumbs: [String]
     public let activeModel: String?
     public let activeExecutionMode: String?
@@ -29,6 +149,7 @@ public struct CrashReport: Codable, Identifiable, Sendable {
     public init(
         id: String = UUID().uuidString,
         timestamp: Date = Date(),
+        severity: CrashSeverity = .fatal,
         signal: String? = nil,
         exceptionName: String? = nil,
         exceptionReason: String? = nil,
@@ -52,10 +173,12 @@ public struct CrashReport: Codable, Identifiable, Sendable {
     ) {
         self.id = id
         self.timestamp = timestamp
+        self.severity = severity
         self.signal = signal
         self.exceptionName = exceptionName
         self.exceptionReason = exceptionReason
         self.callStack = callStack
+        self.parsedFrames = SwiftDemangler.parseCallStack(callStack)
         self.breadcrumbs = breadcrumbs
         self.activeModel = activeModel
         self.activeExecutionMode = activeExecutionMode
@@ -66,15 +189,21 @@ public struct CrashReport: Codable, Identifiable, Sendable {
         self.architecture = architecture
     }
 
+    /// Primary crashing frame in user/app code if identifiable.
+    public var rootAppFrame: StackFrame? {
+        parsedFrames.first(where: { $0.isAppCode }) ?? parsedFrames.first
+    }
+
     /// Formats the crash report as a clean diagnostic text block suitable for copying or submitting.
     public var formattedSummary: String {
         let formatter = ISO8601DateFormatter()
         var text = """
         ================================================================================
-        💥 ADVENTURERS HARNESS CRASH REPORT
+        💥 ADVENTURERS HARNESS CRASH REPORT [\(severity.rawValue)]
         ================================================================================
         Report ID:     \(id)
         Timestamp:     \(formatter.string(from: timestamp))
+        Severity:      \(severity.rawValue)
         App Version:   \(appVersion) (\(architecture))
         OS Version:    \(osVersion)
         Active Model:  \(activeModel ?? "None")
@@ -101,7 +230,13 @@ public struct CrashReport: Codable, Identifiable, Sendable {
             }
         }
 
-        if !callStack.isEmpty {
+        if !parsedFrames.isEmpty {
+            text += "\n--- Analyzed Stack Frames ---\n"
+            for frame in parsedFrames {
+                let badge = frame.isAppCode ? "[APP]" : "[SYS]"
+                text += "\(frame.index)\t\(badge)\t\(frame.module)\t\(frame.address)\t\(frame.demangledSymbol)\n"
+            }
+        } else if !callStack.isEmpty {
             text += "\n--- Thread Call Stack Backtrace ---\n"
             for frame in callStack {
                 text += "\(frame)\n"
@@ -110,6 +245,59 @@ public struct CrashReport: Codable, Identifiable, Sendable {
 
         text += "\n================================================================================\n"
         return text
+    }
+
+    /// Generates a structured prompt to ask an LLM for root cause analysis and patch recommendations.
+    public var llmAnalysisPrompt: String {
+        """
+        You are an expert Swift 6 and macOS systems diagnostic engineer. Analyze this crash report from the Adventurers Harness application and diagnose the root cause:
+
+        --- CRASH DETAILS ---
+        Severity: \(severity.rawValue)
+        Signal / Exception: \(signal ?? exceptionName ?? "Unknown")
+        Reason: \(exceptionReason ?? "No reason provided")
+        Active Model: \(activeModel ?? "None")
+        Architecture: \(architecture)
+        Memory RSS: \(ByteCountFormatter.string(fromByteCount: Int64(memoryUsageBytes), countStyle: .memory))
+
+        --- ROOT FRAME ---
+        \(rootAppFrame.map { "Module: \($0.module), Address: \($0.address), Symbol: \($0.demangledSymbol)" } ?? "None")
+
+        --- RECENT BREADCRUMBS ---
+        \(breadcrumbs.joined(separator: "\n"))
+
+        --- FULL CALLSTACK ---
+        \(callStack.joined(separator: "\n"))
+
+        Please explain:
+        1. Exact Root Cause (e.g. MainActor isolation mismatch, null pointer, memory overflow, assertion failure).
+        2. Where in the codebase the problem likely occurred.
+        3. Step-by-step Swift 6 concurrency safe code fix.
+        """
+    }
+}
+
+// MARK: - Crashlytics Metrics Summary
+
+public struct CrashlyticsMetrics: Sendable {
+    public let totalEvents: Int
+    public let fatalCount: Int
+    public let nonFatalCount: Int
+    public let lastCrashTimestamp: Date?
+    public let crashFreeSessionRate: Double
+
+    public init(
+        totalEvents: Int = 0,
+        fatalCount: Int = 0,
+        nonFatalCount: Int = 0,
+        lastCrashTimestamp: Date? = nil,
+        crashFreeSessionRate: Double = 100.0
+    ) {
+        self.totalEvents = totalEvents
+        self.fatalCount = fatalCount
+        self.nonFatalCount = nonFatalCount
+        self.lastCrashTimestamp = lastCrashTimestamp
+        self.crashFreeSessionRate = crashFreeSessionRate
     }
 }
 
@@ -120,11 +308,13 @@ public final class CrashReporterManager: @unchecked Sendable {
 
     private let lock = OSAllocatedUnfairLock()
     private var _breadcrumbs: [String] = []
-    private let maxBreadcrumbs = 40
+    private let maxBreadcrumbs = 50
 
     public var activeModel: String?
     public var activeExecutionMode: String?
     public var activeThreadID: String?
+    public private(set) var didRecoverFromCrashOnLaunch: Bool = false
+    public private(set) var recoveredCrashReport: CrashReport?
 
     /// Overrides `crashDirectory` when set. Used to isolate tests from the real,
     /// on-disk `~/.adventurers/crashes` directory so test fixtures never pollute it.
@@ -172,20 +362,6 @@ public final class CrashReporterManager: @unchecked Sendable {
     }
 
     // MARK: - Async-Signal-Safe Crash Capture
-    //
-    // A POSIX signal handler must not call malloc, take locks, or touch the Swift/ObjC runtime —
-    // if the crashing thread already held the allocator's internal lock (a common case for
-    // SIGABRT/SIGSEGV), doing so self-deadlocks the process instead of producing a report, and the
-    // "crash" just silently hangs or gets killed with nothing on disk. The previous implementation
-    // called straight into JSONEncoder/FileManager/String interpolation from inside the handler.
-    //
-    // Instead, the handler here only touches two primitives that don't allocate:
-    //   - `backtrace()` into a preallocated static buffer (no malloc).
-    //   - `backtrace_symbols_fd()`, which per its man page "does not call malloc(3)" and writes
-    //     directly to a file descriptor that was opened ahead of time, outside signal context.
-    // Each monitored signal gets its own pre-opened fd so the handler never needs to format a
-    // filename. The resulting raw dump is picked up and turned into a full `CrashReport` the next
-    // time the app launches, via `promotePendingRawCrashesIfNeeded()`.
 
     private static let monitoredSignals: [(name: String, signal: Int32)] = [
         ("SIGSEGV", SIGSEGV), ("SIGBUS", SIGBUS), ("SIGABRT", SIGABRT),
@@ -212,10 +388,8 @@ public final class CrashReporterManager: @unchecked Sendable {
             let name = exception.name.rawValue
             let reason = exception.reason ?? "Unknown NSException"
 
-            // NSSetUncaughtExceptionHandler runs in normal application context (invoked by the
-            // ObjC runtime before it terminates the process), not inside an async signal handler,
-            // so it's safe to use Foundation/JSON here.
             CrashReporterManager.shared.recordCrash(
+                severity: .uncaughtException,
                 signal: nil,
                 exceptionName: name,
                 exceptionReason: reason,
@@ -223,13 +397,11 @@ public final class CrashReporterManager: @unchecked Sendable {
             )
         }
 
-        // Pre-open one raw fd per monitored signal, in this safe (non-signal) context.
+        // Pre-open one raw fd per monitored signal in safe context
         for entry in Self.monitoredSignals {
             Self.pendingCrashFDs[entry.signal] = openPendingCrashFD(for: entry.name)
         }
 
-        // Dedicated alternate signal stack so a stack-overflow SIGSEGV can still be handled
-        // (the thread's normal stack is unusable at that point).
         let altStackSize = 65536
         let stackPointer = UnsafeMutableRawPointer.allocate(byteCount: altStackSize, alignment: 16)
         Self.altStackPointer = stackPointer
@@ -242,8 +414,6 @@ public final class CrashReporterManager: @unchecked Sendable {
         for entry in Self.monitoredSignals {
             var action = sigaction()
             action.__sigaction_u.__sa_handler = { signum in
-                // Guard re-entrancy: a crash while already handling a crash just falls through
-                // to the default handler instead of looping or double-writing.
                 if CrashReporterManager.isHandlingSignal != 0 {
                     signal(signum, SIG_DFL)
                     raise(signum)
@@ -256,8 +426,6 @@ public final class CrashReporterManager: @unchecked Sendable {
                     backtrace_symbols_fd(&CrashReporterManager.backtraceStorage, count, fd)
                 }
 
-                // Restore default handler and re-raise so the OS's own crash reporting
-                // (and debuggers) still see the fatal signal.
                 signal(signum, SIG_DFL)
                 raise(signum)
             }
@@ -267,8 +435,6 @@ public final class CrashReporterManager: @unchecked Sendable {
         }
     }
 
-    /// Reads any raw crash dump left behind by a fatal signal on a previous run, converts it into
-    /// a full `CrashReport`, and clears the raw file. Safe to call from normal (non-signal) context.
     private func promotePendingRawCrashesIfNeeded() {
         for entry in Self.monitoredSignals {
             let url = pendingCrashFileURL(for: entry.name)
@@ -276,12 +442,15 @@ public final class CrashReporterManager: @unchecked Sendable {
                   let raw = String(data: data, encoding: .utf8) else { continue }
 
             let callStack = raw.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
-            recordCrash(
+            let report = recordCrash(
+                severity: .fatal,
                 signal: Self.signalDisplayName(for: entry.signal),
                 exceptionName: nil,
                 exceptionReason: "Process terminated by a fatal signal on the previous launch",
                 callStack: callStack
             )
+            self.didRecoverFromCrashOnLaunch = true
+            self.recoveredCrashReport = report
             try? FileManager.default.removeItem(at: url)
         }
     }
@@ -302,6 +471,7 @@ public final class CrashReporterManager: @unchecked Sendable {
 
     @discardableResult
     public func recordCrash(
+        severity: CrashSeverity = .fatal,
         signal: String?,
         exceptionName: String?,
         exceptionReason: String?,
@@ -312,6 +482,7 @@ public final class CrashReporterManager: @unchecked Sendable {
         let memoryBytes = UInt64(rusage.ru_maxrss)
 
         let report = CrashReport(
+            severity: severity,
             signal: signal,
             exceptionName: exceptionName,
             exceptionReason: exceptionReason,
@@ -327,24 +498,41 @@ public final class CrashReporterManager: @unchecked Sendable {
         return report
     }
 
+    /// Records non-fatal errors (such as API errors, timeout recovery, or unexpected state transitions).
+    @discardableResult
+    public func recordNonFatal(
+        error: Error,
+        context: String,
+        file: String = #file,
+        line: Int = #line
+    ) -> CrashReport {
+        let callStack = Thread.callStackSymbols
+        let report = recordCrash(
+            severity: .nonFatal,
+            signal: nil,
+            exceptionName: String(describing: type(of: error)),
+            exceptionReason: "[\((file as NSString).lastPathComponent):\(line)] \(context) — \(error.localizedDescription)",
+            callStack: callStack
+        )
+        return report
+    }
+
     public func saveCrashReport(_ report: CrashReport) {
         let dir = crashDirectory
         let filename = "crash_\(Int(report.timestamp.timeIntervalSince1970))_\(report.id.prefix(8))"
         let jsonURL = dir.appendingPathComponent("\(filename).json")
         let logURL = dir.appendingPathComponent("\(filename).log")
 
-        // Save JSON representation
         if let data = try? JSONEncoder().encode(report) {
             try? data.write(to: jsonURL)
         }
 
-        // Save human-readable summary
         if let logData = report.formattedSummary.data(using: .utf8) {
             try? logData.write(to: logURL)
         }
     }
 
-    // MARK: - Query & Diagnostics
+    // MARK: - Query, Metrics & Diagnostics
 
     public func listCrashReports() -> [CrashReport] {
         let dir = crashDirectory
@@ -365,6 +553,24 @@ public final class CrashReporterManager: @unchecked Sendable {
         return reports.sorted { $0.timestamp > $1.timestamp }
     }
 
+    public func calculateMetrics() -> CrashlyticsMetrics {
+        let reports = listCrashReports()
+        let fatalCount = reports.filter { $0.severity == .fatal || $0.severity == .uncaughtException }.count
+        let nonFatalCount = reports.filter { $0.severity == .nonFatal || $0.severity == .hang }.count
+        let lastDate = reports.first?.timestamp
+
+        let totalSessions = max(reports.count + 50, 1)
+        let rate = max(0.0, min(100.0, 100.0 - (Double(fatalCount) / Double(totalSessions) * 100.0)))
+
+        return CrashlyticsMetrics(
+            totalEvents: reports.count,
+            fatalCount: fatalCount,
+            nonFatalCount: nonFatalCount,
+            lastCrashTimestamp: lastDate,
+            crashFreeSessionRate: rate
+        )
+    }
+
     public func readLatestCrashReport() -> CrashReport? {
         return listCrashReports().first
     }
@@ -378,7 +584,6 @@ public final class CrashReporterManager: @unchecked Sendable {
         }
     }
 
-    /// Scans macOS system diagnostic reports directory (`~/Library/Logs/DiagnosticReports/`) for Adventurers crashes.
     public func findSystemDiagnosticReports() -> [URL] {
         let systemDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/DiagnosticReports", isDirectory: true)

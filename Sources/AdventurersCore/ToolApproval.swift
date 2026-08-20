@@ -119,14 +119,19 @@ public actor ToolApprovalManager {
     public typealias ApprovalHandler = @Sendable (ToolApprovalRequest) async -> ToolApprovalDecision
     private var approvalHandler: ApprovalHandler?
 
+    /// - Parameter approvalHandler: Set synchronously at construction (rather than via the async
+    ///   `setApprovalHandler(_:)`) so there is no window after init where a caller could race
+    ///   ahead of handler registration and fall through to the raw continuation/timeout path.
     public init(
         defaultPolicy: ToolApprovalPolicy = .askEveryTime,
         maxConsecutiveRejections: Int = 3,
-        defaultTimeoutSeconds: TimeInterval = 30.0
+        defaultTimeoutSeconds: TimeInterval = 30.0,
+        approvalHandler: ApprovalHandler? = nil
     ) {
         self.defaultPolicy = defaultPolicy
         self.maxConsecutiveRejections = maxConsecutiveRejections
         self.defaultTimeoutSeconds = defaultTimeoutSeconds
+        self.approvalHandler = approvalHandler
     }
 
     // MARK: - Policy Configuration

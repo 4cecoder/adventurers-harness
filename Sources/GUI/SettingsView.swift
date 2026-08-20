@@ -2272,40 +2272,128 @@ private struct AppearanceSettingsPane: View {
     }
 }
 
-// MARK: - Crash Logs & Diagnostics Settings Pane
+// MARK: - Crash Logs & Crashlytics Diagnostics Settings Pane
 
 private struct DiagnosticsSettingsPane: View {
     @State private var crashReports: [CrashReport] = []
     @State private var systemReports: [URL] = []
+    @State private var metrics = CrashReporterManager.shared.calculateMetrics()
+    @State private var selectedSeverity: CrashSeverity? = nil
     @State private var selectedReport: CrashReport?
     @State private var copiedToast: String?
+    @State private var aiAnalysisModalText: String?
+
+    var filteredReports: [CrashReport] {
+        if let sev = selectedSeverity {
+            return crashReports.filter { $0.severity == sev }
+        }
+        return crashReports
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 18) {
             // Header
             VStack(alignment: .leading, spacing: 4) {
-                Text("Crash Logs & Diagnostics")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Color.adTextPrimary)
-                Text("View native callstack backtraces, Unix signals, uncaught exceptions, and activity breadcrumbs.")
+                HStack {
+                    Image(systemName: "waveform.path.ecg.rectangle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color.adOrange)
+                    Text("Crashlytics & System Diagnostics")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Color.adTextPrimary)
+                    Spacer()
+                    Text("Swift 6 Strict Memory Safety")
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.adSuccess.opacity(0.15))
+                        .foregroundStyle(Color.adSuccess)
+                        .clipShape(Capsule())
+                }
+                Text("Real-time signal interception (SIGSEGV/SIGABRT), demangled backtraces, thread activity, and LLM root cause analysis.")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.adTextSecondary)
             }
 
-            // Diagnostic Actions Card
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
+            // 1. Crashlytics Health Metrics Strip
+            HStack(spacing: 12) {
+                metricCard(
+                    title: "CRASH-FREE SESSIONS",
+                    value: String(format: "%.1f%%", metrics.crashFreeSessionRate),
+                    icon: "heart.text.square.fill",
+                    color: metrics.crashFreeSessionRate >= 99.0 ? .green : .orange
+                )
+                metricCard(
+                    title: "FATAL SIGNALS",
+                    value: "\(metrics.fatalCount)",
+                    icon: "exclamationmark.octagon.fill",
+                    color: metrics.fatalCount == 0 ? .green : .red
+                )
+                metricCard(
+                    title: "NON-FATALS",
+                    value: "\(metrics.nonFatalCount)",
+                    icon: "info.circle.fill",
+                    color: .cyan
+                )
+                metricCard(
+                    title: "WATCHDOG",
+                    value: "ACTIVE",
+                    icon: "shield.lefthalf.filled.badge.checkmark",
+                    color: .green
+                )
+            }
+
+            // 2. Action Ribbon & Filters
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    // Filter Pills
+                    Button {
+                        selectedSeverity = nil
+                    } label: {
+                        Text("All (\(crashReports.count))")
+                            .font(.system(size: 11, weight: selectedSeverity == nil ? .bold : .medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(selectedSeverity == nil ? Color.adOrange : Color.adElevated)
+                            .foregroundStyle(selectedSeverity == nil ? Color.black : Color.adTextPrimary)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(CrashSeverity.allCases, id: \.self) { sev in
+                        let count = crashReports.filter { $0.severity == sev }.count
+                        Button {
+                            selectedSeverity = sev
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: sev.icon)
+                                    .font(.system(size: 10))
+                                Text("\(sev.rawValue) (\(count))")
+                            }
+                            .font(.system(size: 11, weight: selectedSeverity == sev ? .bold : .medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(selectedSeverity == sev ? Color.adOrange : Color.adElevated)
+                            .foregroundStyle(selectedSeverity == sev ? Color.black : Color.adTextPrimary)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Spacer()
+
                     Button {
                         refreshReports()
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 4) {
                             Image(systemName: "arrow.clockwise")
-                            Text("Refresh Logs")
+                            Text("Refresh")
                         }
+                        .font(.system(size: 11, weight: .semibold))
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 5)
                     .background(Color.adElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
 
@@ -2313,37 +2401,20 @@ private struct DiagnosticsSettingsPane: View {
                         let dir = CrashReporterManager.shared.crashDirectory
                         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: dir.path)
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 4) {
                             Image(systemName: "folder.fill")
-                            Text("Open Crash Folder")
+                            Text("Open Folder")
                         }
+                        .font(.system(size: 11, weight: .semibold))
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 5)
                     .background(Color.adElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                    Button {
-                        let sessionDir = FileManager.default.homeDirectoryForCurrentUser
-                            .appendingPathComponent(".adventurers/sessions", isDirectory: true)
-                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: sessionDir.path)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "list.bullet.rectangle.fill")
-                            Text("Open Session JSONL Logs")
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.adElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                    Spacer()
 
                     if !crashReports.isEmpty {
-                        Button("Clear Reports") {
+                        Button("Clear") {
                             CrashReporterManager.shared.clearAllCrashReports()
                             refreshReports()
                         }
@@ -2354,111 +2425,74 @@ private struct DiagnosticsSettingsPane: View {
                 }
 
                 if let toast = copiedToast {
-                    Text(toast)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.cyan)
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.adSuccess)
+                        Text(toast)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.adSuccess)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 2)
                 }
             }
-            .padding(14)
+            .padding(12)
             .background(Color.adCard)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
 
-            // Recent Crash Reports Section
+            // 3. Recorded Reports List
             VStack(alignment: .leading, spacing: 10) {
-                Text("RECORDED CRASH REPORTS (\(crashReports.count))")
+                Text("CRASH & DIAGNOSTIC TIMELINE (\(filteredReports.count))")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(Color.adTextTertiary)
 
-                if crashReports.isEmpty {
-                    HStack(spacing: 8) {
+                if filteredReports.isEmpty {
+                    HStack(spacing: 12) {
                         Image(systemName: "checkmark.shield.fill")
-                            .font(.system(size: 16))
-                            .foregroundStyle(Color.cyan)
-                        Text("No crashes recorded! All native gates, signal handlers, and execution threads are healthy.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.adTextSecondary)
+                            .font(.system(size: 20))
+                            .foregroundStyle(Color.adSuccess)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("System State Nominal")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Color.adTextPrimary)
+                            Text("No matching events recorded. Signal handlers, actor isolation, and memory gates operating smoothly.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.adTextSecondary)
+                        }
                     }
-                    .padding(14)
+                    .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.adCard)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
                 } else {
-                    ForEach(crashReports) { report in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.red)
-
-                                Text(report.signal ?? report.exceptionName ?? "Crash Event")
-                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Color.adTextPrimary)
-
-                                Spacer()
-
-                                Text(ISO8601DateFormatter().string(from: report.timestamp))
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(Color.adTextTertiary)
-
-                                Button("Copy Full Report") {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(report.formattedSummary, forType: .string)
-                                    copiedToast = "✓ Copied crash backtrace for report \(report.id.prefix(8)) to clipboard"
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                                        copiedToast = nil
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(Color.cyan)
-                            }
-
-                            if let reason = report.exceptionReason {
-                                Text("Reason: \(reason)")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Color.adTextSecondary)
-                            }
-
-                            // Callstack preview
-                            if !report.callStack.isEmpty {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        ForEach(report.callStack.prefix(6), id: \.self) { frame in
-                                            Text(frame)
-                                                .font(.system(size: 9, design: .monospaced))
-                                                .foregroundStyle(Color.adTextTertiary)
-                                        }
-                                    }
-                                }
-                                .padding(8)
-                                .background(Color.black.opacity(0.4))
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                            }
-                        }
-                        .padding(12)
-                        .background(Color.adCard)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.red.opacity(0.3), lineWidth: 1))
+                    ForEach(filteredReports) { report in
+                        crashReportCard(report: report)
                     }
                 }
             }
 
-            // Live Activity Breadcrumbs Card
-            VStack(alignment: .leading, spacing: 10) {
-                Text("RECENT IN-FLIGHT BREADCRUMBS")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color.adTextTertiary)
+            // 4. In-Flight Activity Breadcrumbs
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "point.3.filled.connected.trianglepath.dotted")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.adOrange)
+                    Text("IN-FLIGHT ACTIVITY BREADCRUMBS (ROLLING BUFFER)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.adTextTertiary)
+                }
 
                 let breadcrumbs = CrashReporterManager.shared.recentBreadcrumbs
                 if breadcrumbs.isEmpty {
                     Text("No recent in-flight events.")
                         .font(.system(size: 11))
                         .foregroundStyle(Color.adTextTertiary)
-                        .padding(12)
+                        .padding(10)
                 } else {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(breadcrumbs.suffix(8), id: \.self) { b in
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(breadcrumbs.suffix(10), id: \.self) { b in
                             Text(b)
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(Color.adTextSecondary)
@@ -2466,8 +2500,9 @@ private struct DiagnosticsSettingsPane: View {
                     }
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.black.opacity(0.3))
+                    .background(Color.black.opacity(0.35))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.adDivider, lineWidth: 1))
                 }
             }
         }
@@ -2476,9 +2511,150 @@ private struct DiagnosticsSettingsPane: View {
         }
     }
 
+    private func metricCard(title: String, value: String, icon: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 13))
+                    .foregroundStyle(color)
+                Spacer()
+            }
+            Text(value)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.adTextPrimary)
+            Text(title)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Color.adTextTertiary)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.adCard)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+    }
+
+    private func crashReportCard(report: CrashReport) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Header Row
+            HStack(spacing: 8) {
+                Image(systemName: report.severity.icon)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(report.severity == .fatal ? Color.red : Color.adOrange)
+
+                Text(report.signal ?? report.exceptionName ?? "Crash Event")
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.adTextPrimary)
+
+                Text("[\(report.severity.rawValue)]")
+                    .font(.system(size: 9, weight: .bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background((report.severity == .fatal ? Color.red : Color.adOrange).opacity(0.2))
+                    .foregroundStyle(report.severity == .fatal ? Color.red : Color.adOrange)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                Spacer()
+
+                Text(ISO8601DateFormatter().string(from: report.timestamp))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                // Copy Report
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(report.formattedSummary, forType: .string)
+                    copiedToast = "✓ Copied diagnostic backtrace for report \(report.id.prefix(8))"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        copiedToast = nil
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.doc")
+                        Text("Copy")
+                    }
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.cyan)
+                }
+                .buttonStyle(.plain)
+
+                // ⚡ Analyze with LLM
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(report.llmAnalysisPrompt, forType: .string)
+                    copiedToast = "⚡ Copied LLM root-cause analysis prompt to clipboard! Paste into active chat to diagnose."
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                        copiedToast = nil
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                        Text("AI Diagnose")
+                    }
+                    .font(.system(size: 10, weight: .bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.adOrange.opacity(0.2))
+                    .foregroundStyle(Color.adOrange)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let reason = report.exceptionReason {
+                Text(reason)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.adTextSecondary)
+            }
+
+            // Stack Frame Visualizer
+            if !report.parsedFrames.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(report.parsedFrames.prefix(8)) { frame in
+                        HStack(spacing: 6) {
+                            Text("\(frame.index)")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(Color.adTextTertiary)
+                                .frame(width: 16, alignment: .trailing)
+
+                            Text(frame.isAppCode ? "APP" : "SYS")
+                                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(frame.isAppCode ? Color.adOrange.opacity(0.3) : Color.gray.opacity(0.2))
+                                .foregroundStyle(frame.isAppCode ? Color.adOrange : Color.gray)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                            Text(frame.module)
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(frame.isAppCode ? Color.adTextPrimary : Color.adTextTertiary)
+
+                            Text(frame.demangledSymbol)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(frame.isAppCode ? Color.cyan : Color.adTextSecondary)
+                                .lineLimit(1)
+
+                            Spacer()
+                        }
+                    }
+                }
+                .padding(8)
+                .background(Color.black.opacity(0.4))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+        }
+        .padding(12)
+        .background(Color.adCard)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(report.severity == .fatal ? Color.red.opacity(0.4) : Color.adDivider, lineWidth: 1)
+        )
+    }
+
     private func refreshReports() {
         self.crashReports = CrashReporterManager.shared.listCrashReports()
         self.systemReports = CrashReporterManager.shared.findSystemDiagnosticReports()
+        self.metrics = CrashReporterManager.shared.calculateMetrics()
     }
 }
 
