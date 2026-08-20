@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  hindsight-memory:
+    build:
+      context: ./docker/hindsight
+      dockerfile: Dockerfile
+    container_name: adventurers-hindsight-memory
+    ports:
+      - "127.0.0.1:8888:8888"
+    environment:
+      - PORT=8888
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8888/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  sandbox-runner:
+    image: python:3.11-slim
+    container_name: adventurers-sandbox-runner
+    command: tail -f /dev/null
+    volumes:
+      - ./:/workspace
+    working_dir: /workspace
+    restart: unless-stopped
