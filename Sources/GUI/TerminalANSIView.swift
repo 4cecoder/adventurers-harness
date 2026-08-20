@@ -28,14 +28,14 @@ public struct TerminalANSIView: View {
     private func styledSpanText(_ span: ANSISpan) -> some View {
         let fgColor: Color = {
             if let fg = span.style.foregroundColor {
-                return Color(hex: fg.hexString)
+                return Color(hexString: fg.hexString)
             }
             return Color.adTextPrimary
         }()
 
         let bgColor: Color = {
             if let bg = span.style.backgroundColor {
-                return Color(hex: bg.hexString)
+                return Color(hexString: bg.hexString)
             }
             return Color.clear
         }()

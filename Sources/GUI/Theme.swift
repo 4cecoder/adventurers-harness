@@ -73,6 +73,14 @@ extension Color {
             opacity: opacity
         )
     }
+
+    /// Creates a Color from a hex string (e.g. `"#FF6B35"` or `"FF6B35"`).
+    init(hexString: String, opacity: Double = 1.0) {
+        let clean = hexString.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: clean).scanHexInt64(&int)
+        self.init(hex: UInt32(int), opacity: opacity)
+    }
 }
 
 // MARK: - Typography
