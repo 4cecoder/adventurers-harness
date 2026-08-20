@@ -121,19 +121,28 @@ jobs:
             exit 0
           fi
 
+          # generate_appcast refuses a directory containing more than one archive for the same
+          # bundle version (it can't tell which one Sparkle should actually serve as "the"
+          # update), so give it a dedicated directory with only the .zip — the format Sparkle
+          # itself uses to install updates — never the .dmg/.tar.gz which are for manual/Homebrew
+          # installs only.
+          mkdir -p dist/appcast-source
+          cp dist/Adventurers-macOS-arm64.zip dist/appcast-source/
+
           # All three channels share ONE appcast feed (SUFeedURL always points at the `latest`
           # release's appcast.xml) — Sparkle tells channels apart via a <sparkle:channel> tag per
           # item, not via separate feeds. Fetch the existing feed first so new entries accumulate
           # instead of each build wiping out the others' history.
           echo "📡 Fetching existing appcast.xml (if any) so version/delta history accumulates..."
-          curl -sL -f -o dist/appcast.xml "https://github.com/4cecoder/adventurers-harness/releases/download/latest/appcast.xml" || rm -f dist/appcast.xml
+          curl -sL -f -o dist/appcast-source/appcast.xml "https://github.com/4cecoder/adventurers-harness/releases/download/latest/appcast.xml" || rm -f dist/appcast-source/appcast.xml
           chmod +x scripts/sparkle_tools.sh
           echo "🔏 Generating & signing appcast.xml for channel '${CHANNEL}'..."
           if [ "${CHANNEL}" = "stable" ]; then
-            echo "$SPARKLE_PRIVATE_KEY" | ./scripts/sparkle_tools.sh generate_appcast --ed-key-file - dist/
+            echo "$SPARKLE_PRIVATE_KEY" | ./scripts/sparkle_tools.sh generate_appcast --ed-key-file - dist/appcast-source/
           else
-            echo "$SPARKLE_PRIVATE_KEY" | ./scripts/sparkle_tools.sh generate_appcast --ed-key-file - --channel "${CHANNEL}" dist/
+            echo "$SPARKLE_PRIVATE_KEY" | ./scripts/sparkle_tools.sh generate_appcast --ed-key-file - --channel "${CHANNEL}" dist/appcast-source/
           fi
+          cp dist/appcast-source/appcast.xml dist/appcast.xml
           ls -la dist/appcast.xml
 
       - name: Upload Build Artifacts

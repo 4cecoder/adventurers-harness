@@ -63,6 +63,21 @@ To add a new sub-agent CLI target:
 
 ---
 
+## ✅ Pre-commit Hooks
+
+This repo uses [pre-commit](https://pre-commit.com) for hygiene and secret-scanning checks on
+every commit, plus a `swift build`/`swift test` gate on every push. Install once after cloning:
+
+```bash
+brew install pre-commit
+pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
+```
+
+Commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/)
+(`feat(scope): ...`, `fix(scope): ...`, `docs: ...`, `chore: ...`, etc.) — this is enforced by the
+`commit-msg` hook. SwiftLint/SwiftFormat are **not** wired into these hooks yet (see
+`.pre-commit-config.yaml` for why); `.swiftformat` exists for anyone who wants to run it manually.
+
 ## 📦 Building & Testing Release Packages
 
 Before opening a pull request, verify that local release packaging builds cleanly:

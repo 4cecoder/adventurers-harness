@@ -1,0 +1,13 @@
+# Default owner for everything not matched below.
+* @4cecoder
+
+# Security- and integrity-sensitive areas get extra scrutiny.
+/Sources/AdventurersCore/ToolApproval.swift        @4cecoder
+/Sources/AdventurersCore/DangerousCommandDetector.swift @4cecoder
+/Sources/AdventurersCore/DarwinSandbox.swift        @4cecoder
+/Sources/AdventurersCore/CrashReporter.swift        @4cecoder
+/Sources/AdventurersCore/DuplicateInstallCleaner.swift @4cecoder
+/Sources/GUI/AppUpdateManager.swift                 @4cecoder
+/scripts/package_app.sh                             @4cecoder
+/scripts/sparkle_tools.sh                           @4cecoder
+/.github/workflows/                                 @4cecoder
