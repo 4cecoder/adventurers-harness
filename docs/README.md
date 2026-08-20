@@ -8,6 +8,7 @@ Comprehensive guides, specifications, and reverse-engineering analyses for **Adv
 
 ### 1. Getting Started & Core Concepts
 - [**Getting Started Quickstart**](getting-started.md) — 30-second setup, build instructions, and first run.
+- [**Apple Silicon MLX Unified Memory Optimization**](mlx-unified-memory-optimization.md) — 1-bit Bonsai 27B (~5GB), high-TPS small models, and zero-copy UMA memory budgets.
 - [**System Architecture & Engine**](architecture.md) — FSM lifecycle, proposal-certification loop, and actor model.
 - [**Inference Paradigms**](inference-paradigms.md) — Subscriptions vs API keys vs Meta-Harness CLI dispatch.
 - [**Harness Engineering Guide**](harness-engineering-guide.md) — Swift 6 concurrency, actor isolation, and coding standards.

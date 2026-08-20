@@ -81,6 +81,7 @@ Sources/
 
 - 📖 [**Complete Documentation Sitemap**](docs/README.md)
 - 🚀 [**Getting Started (30s Quickstart)**](docs/getting-started.md)
+- ⚡ [**Apple Silicon MLX Unified Memory Optimization (1-bit 5GB Bonsai & Swarm)**](docs/mlx-unified-memory-optimization.md)
 - 🧠 [**The 3 Inference Paradigms**](docs/inference-paradigms.md)
 - 🛡️ [**Deterministic 6-Gate Pipeline & Sandbox**](docs/gates.md)
 - ⚡ [**Guardian Circuit Breaker & Fail-Closed Safety**](docs/guardian-and-safety.md)
