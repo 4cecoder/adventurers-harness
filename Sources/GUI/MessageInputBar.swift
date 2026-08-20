@@ -363,7 +363,9 @@ public struct MessageInputBar: View {
     private var dictationButton: some View {
         Button(action: {
             dictation.toggleDictation(currentText: text) { updatedText in
-                self.text = updatedText
+                Task { @MainActor in
+                    self.text = updatedText
+                }
             }
         }) {
             HStack(spacing: 5) {
