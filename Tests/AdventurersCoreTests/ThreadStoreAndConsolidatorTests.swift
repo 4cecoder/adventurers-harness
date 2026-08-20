@@ -4,7 +4,6 @@
 import Testing
 import Foundation
 @testable import AdventurersCore
-@testable import GUI
 
 @Suite("Thread Message Consolidation & Persistence Suite")
 struct ThreadStoreAndConsolidatorTests {
