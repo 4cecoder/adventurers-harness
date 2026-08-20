@@ -364,6 +364,60 @@ public final class ThreadViewModel: ObservableObject {
                 apiKey: apiKey
             )
 
+            // ⚡ Cactus Needle 2 On-Device Fast-Path Preflight (<15ms, 14MB)
+            let needleDecision = NeedleProcessor.shared.process(
+                prompt: text,
+                workspaceFiles: [],
+                knownTools: ["run_command", "view_file", "grep_search", "list_dir"]
+            )
+
+            if case .localFastExecute(let toolName, let args) = needleDecision.mode, needleDecision.confidence >= NeedleProcessor.shared.confidenceThreshold {
+                terminalManager?.logCommand("[⚡ Cactus Needle 2 Fast-Path] Routed to '\(toolName)' in \(String(format: "%.1f", needleDecision.latencyMs))ms (Confidence: \(Int(needleDecision.confidence * 100))%, Est. Savings: \(needleDecision.tokenSavingsEstimated) tokens)")
+
+                let agentMsgID = UUID().uuidString
+                let initialMsg = ThreadMessage(
+                    id: agentMsgID,
+                    role: .agent,
+                    content: "⚡ *Executing instant local tool via Cactus Needle 2 on-device engine (\(String(format: "%.1f", needleDecision.latencyMs))ms latency)...*",
+                    toolCalls: [
+                        ThreadToolCall(id: "needle-call-1", name: toolName, arguments: args.description, status: .running)
+                    ],
+                    isStreaming: true
+                )
+                self.appendMessage(initialMsg)
+
+                let anyArgs = args.mapValues { AnyCodable($0) }
+                let toolExecResult = await self.toolExecutor.execute(
+                    name: toolName,
+                    arguments: anyArgs,
+                    workingDirectory: self.workingDirectory
+                )
+
+                let cleanOutput = toolName == "run_command" || toolName == "bash" 
+                    ? NeedleOutputCompactor.compactBuildLog(toolExecResult.output)
+                    : toolExecResult.output
+
+                let isErr = toolExecResult.error != nil && !toolExecResult.error!.isEmpty
+                let completedMsg = ThreadMessage(
+                    id: agentMsgID,
+                    role: .agent,
+                    content: isErr ? "Tool execution encountered an issue." : "⚡ Executed via Cactus Needle 2 on-device intelligence.",
+                    toolCalls: [
+                        ThreadToolCall(id: "needle-call-1", name: toolName, arguments: args.description, status: isErr ? .failed(error: toolExecResult.error ?? "Failed") : .succeeded(output: cleanOutput))
+                    ],
+                    toolResults: [
+                        ThreadToolResult(id: "needle-res-1", toolCallID: "needle-call-1", output: isErr ? (toolExecResult.error ?? "") : cleanOutput, isError: isErr)
+                    ],
+                    isStreaming: false
+                )
+                if let idx = self.messages.firstIndex(where: { $0.id == agentMsgID }) {
+                    self.messages[idx] = completedMsg
+                }
+                self.isGenerating = false
+                self.isLoadingSkeleton = false
+                return
+            }
+
             let judgerDecision = TaskJudgerEngine.shared.evaluate(prompt: text)
             var maxTurns = judgerDecision.recommendedTurnBudget
 
