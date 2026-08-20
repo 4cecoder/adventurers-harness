@@ -151,6 +151,16 @@ public final class SettingsModel {
         .anthropic: ["claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
         .deepseek: ["deepseek-reasoner", "deepseek-chat"],
         .openai: ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini", "gpt-4.5-preview"],
+        .lmstudio: [
+            "qwen2.5-coder-32b-instruct",
+            "deepseek-r1-distill-qwen-14b",
+            "deepseek-r1-distill-qwen-32b",
+            "llama-3.3-70b-instruct",
+            "hermes-3-llama-3.1-8b",
+            "mistral-nemo-instruct-2407",
+            "phi-4",
+            "loaded-model"
+        ],
         .local: ["qwen2.5-coder:32b", "deepseek-r1:14b", "deepseek-r1:32b", "llama3.3:70b", "hermes3:8b", "mistral-large:latest"]
     ]
 
@@ -168,8 +178,18 @@ public final class SettingsModel {
 
         var discovered: [String] = []
 
-        // Query provider native API /models endpoint if API key is present
-        if !apiKey.isEmpty || activeProvider == .local {
+        // LM Studio Dynamic Model Discovery via native v1 API
+        if activeProvider == .lmstudio {
+            let lmModels = (try? await LMStudioBridge.shared.listModels(baseURL: baseURL)) ?? []
+            for m in lmModels {
+                if !discovered.contains(m.id) {
+                    discovered.append(m.id)
+                }
+            }
+        }
+
+        // Query provider native API /models endpoint if API key is present or local
+        if !apiKey.isEmpty || activeProvider == .local || activeProvider == .lmstudio {
             let provider = UniversalCloudProvider(
                 name: activeProvider.rawValue,
                 apiKey: apiKey,
@@ -413,7 +433,7 @@ public final class SettingsModel {
                     if let entry = json["openai"] as? [String: Any] {
                         self.apiKey = entry["key"] as? String ?? ""
                     }
-                case .local:
+                case .lmstudio, .local:
                     self.apiKey = ""
                 }
             }
@@ -514,6 +534,7 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
     case anthropic = "Anthropic"
     case deepseek = "DeepSeek"
     case openai = "OpenAI"
+    case lmstudio = "LM Studio (Local / Free)"
     case local = "Custom / Local Gateway"
 
     public var icon: String {
@@ -527,6 +548,7 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
         case .anthropic: return "cube.transparent"
         case .deepseek: return "bolt.fill"
         case .openai: return "brain"
+        case .lmstudio: return "laptopcomputer.and.arrow.down"
         case .local: return "desktopcomputer"
         }
     }
@@ -542,6 +564,7 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
         case .anthropic: return "https://api.anthropic.com/v1"
         case .deepseek: return "https://api.deepseek.com/v1"
         case .openai: return "https://api.openai.com/v1"
+        case .lmstudio: return "http://localhost:1234/v1"
         case .local: return "http://localhost:11434/v1"
         }
     }
@@ -557,6 +580,7 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
         case .anthropic: return "https://anthropic.com"
         case .deepseek: return "https://deepseek.com"
         case .openai: return "https://openai.com"
+        case .lmstudio: return "https://lmstudio.ai"
         case .local: return "http://localhost:11434"
         }
     }
@@ -1548,6 +1572,8 @@ private struct LLMProviderSettingsPane: View {
             return "[Direct API Key]"
         case .openrouter:
             return "[Aggregator Key]"
+        case .lmstudio:
+            return "[On-Device / 100% Free]"
         case .local:
             return "[Local Endpoint]"
         }

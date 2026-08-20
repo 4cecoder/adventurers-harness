@@ -63,7 +63,9 @@ public struct UniversalCloudProvider: LLMProvider, Sendable {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        if !apiKey.isEmpty {
+            request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
         // OpenRouter Attribution Headers
@@ -130,7 +132,9 @@ public struct UniversalCloudProvider: LLMProvider, Sendable {
 
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
-                request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                if !apiKey.isEmpty {
+                    request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                }
                 request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
                 if baseURL.contains("openrouter.ai") {
