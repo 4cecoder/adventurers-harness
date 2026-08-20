@@ -17,8 +17,9 @@ The entire Adventurers multi-tier intelligence pipeline fits comfortably into 8G
 | **Tier 1: Edge Router** | **Cactus Needle 2** (45M) | CQ2-bit Simple Attention | **14 MB** | **960+ tok/s** | Fast-path (git/files), grammar extraction, context compaction |
 | **Tier 2: Decomposer** | **MiniCPM5-1B** (1.0B) | INT4 MLX (128K context) | **520 MB** | **280+ tok/s** | Deterministic micro-task decomposition & contract generation |
 | **Tier 3: Workhorse** | **Qwen 2.5 0.5B** (500M) | INT4 MLX / CPU | **397 MB** | **450+ tok/s** | High-speed code drafting, tool parameter generation |
-| **Tier 4: Frontier Oracle** | **Bonsai 27B** (27B) | **1-bit / 1.5-bit MLX** | **~5,120 MB (5.0 GB)** | **48+ tok/s** | Deep CoT reasoning, invariant repair via `/v1/responses` |
-| **TOTAL SWARM ACTIVE** | **4 Models Concurrently** | **Multi-Tier UMA** | **~5.6 GB RAM** | **Up to 960 tok/s** | **Complete autonomous coding swarm** |
+| **Tier 4: Local Oracle** | **Bonsai 27B** (27B) | **1-bit / 1.5-bit MLX** | **~5,120 MB (5.0 GB)** | **48+ tok/s** | Deep CoT reasoning, invariant repair via `/v1/responses` |
+| **Tier 5: Cloud Teacher** | **OpenCode MiMo v2.5** (MoE) | Cloud Subscription | **0 MB (Remote API)** | **110+ tok/s** | Frontier architectural teacher via OpenCode Go Plan |
+| **TOTAL ON-DEVICE ACTIVE** | **4 Models Concurrently** | **Multi-Tier UMA** | **~5.6 GB RAM** | **Up to 960 tok/s** | **Complete autonomous coding swarm** |
 
 ---
 

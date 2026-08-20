@@ -298,7 +298,30 @@ class CooperativeSmallModelSwarm:
         return tasks
 
     def _call_bonsai_oracle(self, prompt: str, failed_tasks: List[MicroTask]) -> str:
-        """Invokes Bonsai 27B on LM Studio /v1/responses for deep reasoning."""
+        """Invokes Bonsai 27B (local) or OpenCode Go MiMo v2.5 (cloud teacher) for deep reasoning."""
+        import os
+        opencode_key = os.environ.get("OPENCODE_API_KEY")
+
+        if opencode_key:
+            # Cloud Teacher: OpenCode Go Plan (MiMo v2.5)
+            endpoint = "https://api.opencode.ai/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {opencode_key}", "Content-Type": "application/json"}
+            payload = {
+                "model": "mimo-v2.5",
+                "messages": [
+                    {"role": "system", "content": "You are the Cloud Teacher Oracle. Analyze failed on-device micro-tasks and provide root-cause repair."},
+                    {"role": "user", "content": f"Task: {prompt}\nFailed steps: {[t.dict() for t in failed_tasks]}"}
+                ]
+            }
+            try:
+                with httpx.Client(timeout=60.0) as client:
+                    resp = client.post(endpoint, json=payload, headers=headers)
+                    resp.raise_for_status()
+                    return resp.json()["choices"][0]["message"]["content"]
+            except Exception as e:
+                console.print(f"[dim]OpenCode cloud teacher unreachable ({e}), falling back to local Bonsai 27B...[/dim]")
+
+        # Local Teacher: Bonsai 27B via LM Studio /v1/responses
         endpoint = f"{self.base_url}/v1/responses"
         payload = {
             "model": self.oracle_model,

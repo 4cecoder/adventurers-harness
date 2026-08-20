@@ -79,4 +79,13 @@ SMALL_MODELS_REGISTRY: Dict[str, SmallModelSpec] = {
         expected_tps=48.0,
         description="Deep CoT frontier model (~5GB in 1-bit / BitNet CQ) via LM Studio /v1/responses."
     ),
+    "mimo-v2.5": SmallModelSpec(
+        name="OpenCode MiMo v2.5",
+        id="opencode/mimo-v2.5",
+        params="Frontier MoE",
+        quantized_size_mb=0,  # Cloud Subscription
+        context_window=128000,
+        expected_tps=110.0,
+        description="OpenCode Go Plan subscription Cloud Teacher & Architectural Oracle."
+    ),
 }
