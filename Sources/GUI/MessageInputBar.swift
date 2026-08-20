@@ -530,15 +530,88 @@ public struct MessageInputBar: View {
             }
 
             if executionMode == .subscription || executionMode == .payAsYouGo {
-                Section("Quick Model Switch") {
-                    ForEach(availableModels.prefix(6), id: \.self) { model in
-                        Button {
-                            selectedModel = model
-                        } label: {
-                            HStack {
-                                Text(model)
-                                if selectedModel == model {
-                                    Image(systemName: "checkmark")
+                let reasoningModels = availableModels.filter {
+                    let m = $0.lowercased()
+                    return m.contains("reason") || m.contains("r1") || m.contains("o1") || m.contains("o3") || m.contains("thinking")
+                }
+                let codingModels = availableModels.filter {
+                    let m = $0.lowercased()
+                    return (m.contains("code") || m.contains("coder") || m.contains("glm") || m.contains("sonnet") || m.contains("mimo") || m.contains("kimi") || m.contains("qwen")) && !reasoningModels.contains($0)
+                }
+                let fastModels = availableModels.filter {
+                    let m = $0.lowercased()
+                    return (m.contains("flash") || m.contains("haiku") || m.contains("mini") || m.contains("8b")) && !reasoningModels.contains($0) && !codingModels.contains($0)
+                }
+                let otherModels = availableModels.filter {
+                    !reasoningModels.contains($0) && !codingModels.contains($0) && !fastModels.contains($0)
+                }
+
+                if !reasoningModels.isEmpty {
+                    Section("🧠 Reasoning & Deep Thought") {
+                        ForEach(reasoningModels, id: \.self) { model in
+                            Button {
+                                selectedModel = model
+                            } label: {
+                                HStack {
+                                    Image(systemName: "brain.head.profile")
+                                    Text(model)
+                                    if selectedModel == model {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !codingModels.isEmpty {
+                    Section("💻 Coding & Agentic") {
+                        ForEach(codingModels, id: \.self) { model in
+                            Button {
+                                selectedModel = model
+                            } label: {
+                                HStack {
+                                    Image(systemName: "chevron.left.forwardslash.chevron.right")
+                                    Text(model)
+                                    if selectedModel == model {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !fastModels.isEmpty {
+                    Section("⚡ Fast & Low Latency") {
+                        ForEach(fastModels, id: \.self) { model in
+                            Button {
+                                selectedModel = model
+                            } label: {
+                                HStack {
+                                    Image(systemName: "bolt.fill")
+                                    Text(model)
+                                    if selectedModel == model {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !otherModels.isEmpty {
+                    Section("🌐 Frontier & General") {
+                        ForEach(otherModels, id: \.self) { model in
+                            Button {
+                                selectedModel = model
+                            } label: {
+                                HStack {
+                                    Image(systemName: "sparkles")
+                                    Text(model)
+                                    if selectedModel == model {
+                                        Image(systemName: "checkmark")
+                                    }
                                 }
                             }
                         }

@@ -131,12 +131,27 @@ public final class SettingsModel {
             "kimi-k3"
         ],
         .opencodeZen: ["claude-3-7-sonnet", "deepseek-r1", "o3-mini", "gemini-2.5-pro", "glm-5.3", "muse-spark-1.2"],
-        .glm: ["glm-5.3", "glm-5.2", "glm-4.7", "glm-4-plus", "glm-4-flash"],
-        .openrouter: ["meta/muse-spark-1.2-contributor", "meta/muse-spark-1.2", "anthropic/claude-3.7-sonnet", "deepseek/deepseek-r1", "deepseek/deepseek-chat", "meta-llama/llama-3.3-70b-instruct", "qwen/qwen-2.5-coder-32b-instruct", "google/gemini-2.0-flash-001"],
+        .hermes: [
+            "hermes-3-llama-3.1-405b",
+            "hermes-3-llama-3.1-70b",
+            "hermes-3-llama-3.1-8b",
+            "nous-hermes-2-mixtral-8x7b-dpo",
+            "nous-hermes-2-yi-34b",
+            "hermes-function-calling"
+        ],
+        .glm: ["glm-5.3", "glm-5.2", "glm-4.7", "glm-4-plus", "glm-4-flash", "codegeex-4"],
+        .gemini: [
+            "gemini-2.5-pro",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-thinking-exp-01-21",
+            "gemini-1.5-pro-latest",
+            "gemini-1.5-flash-latest"
+        ],
+        .openrouter: ["meta/muse-spark-1.2-contributor", "meta/muse-spark-1.2", "anthropic/claude-3.7-sonnet", "deepseek/deepseek-r1", "deepseek/deepseek-chat", "meta-llama/llama-3.3-70b-instruct", "qwen/qwen-2.5-coder-32b-instruct", "google/gemini-2.0-flash-001", "nousresearch/hermes-3-llama-3.1-405b"],
         .anthropic: ["claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
         .deepseek: ["deepseek-reasoner", "deepseek-chat"],
         .openai: ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini", "gpt-4.5-preview"],
-        .local: ["qwen2.5-coder:32b", "deepseek-r1:14b", "deepseek-r1:32b", "llama3.3:70b", "mistral-large:latest"]
+        .local: ["qwen2.5-coder:32b", "deepseek-r1:14b", "deepseek-r1:32b", "llama3.3:70b", "hermes3:8b", "mistral-large:latest"]
     ]
 
     public func modelsForActiveProvider() -> [String] {
@@ -370,6 +385,10 @@ public final class SettingsModel {
                     if let entry = (json["opencode-go"] ?? json["opencode"]) as? [String: Any] {
                         self.apiKey = entry["key"] as? String ?? ""
                     }
+                case .hermes:
+                    if let entry = (json["hermes"] ?? json["nous"]) as? [String: Any] {
+                        self.apiKey = entry["key"] as? String ?? ""
+                    }
                 case .glm:
                     if let entry = (json["zai-coding-plan"] ?? json["zhipuai"]) as? [String: Any] {
                         self.apiKey = entry["key"] as? String ?? ""
@@ -488,6 +507,7 @@ public struct PersistedSettings: Codable, Sendable {
 public enum ProviderType: String, CaseIterable, Sendable, Codable {
     case opencode = "OpenCode Go Cloud"
     case opencodeZen = "OpenCode Zen Cloud"
+    case hermes = "Nous Hermes Cloud"
     case glm = "Zhipu / Z.AI GLM"
     case gemini = "Google Gemini / Antigravity"
     case openrouter = "OpenRouter"
@@ -500,12 +520,13 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
         switch self {
         case .opencode: return "bolt.badge.clock"
         case .opencodeZen: return "wand.and.stars"
+        case .hermes: return "sparkles"
         case .glm: return "cpu.fill"
         case .gemini: return "atom"
         case .openrouter: return "network"
         case .anthropic: return "cube.transparent"
         case .deepseek: return "bolt.fill"
-        case .openai: return "sparkles"
+        case .openai: return "brain"
         case .local: return "desktopcomputer"
         }
     }
@@ -514,6 +535,7 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
         switch self {
         case .opencode: return "https://opencode.ai/zen/go/v1"
         case .opencodeZen: return "https://opencode.ai/zen/v1"
+        case .hermes: return "https://hermes.nousresearch.com/v1"
         case .glm: return "https://api.z.ai/api/coding/paas/v4"
         case .gemini: return "https://generativelanguage.googleapis.com/v1beta"
         case .openrouter: return "https://openrouter.ai/api/v1"
@@ -528,6 +550,7 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
         switch self {
         case .opencode: return "https://opencode.ai/go"
         case .opencodeZen: return "https://opencode.ai/zen"
+        case .hermes: return "https://nousresearch.com"
         case .glm: return "https://z.ai"
         case .gemini: return "https://ai.google.dev"
         case .openrouter: return "https://openrouter.ai"
@@ -1515,6 +1538,8 @@ private struct LLMProviderSettingsPane: View {
             return "[Cloud Plan: 150k req/mo]"
         case .opencodeZen:
             return "[Cloud Plan: Zen]"
+        case .hermes:
+            return "[Nous Hermes Cloud / Agent]"
         case .glm:
             return "[Coding Plan / API]"
         case .gemini:

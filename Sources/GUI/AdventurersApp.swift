@@ -617,12 +617,13 @@ struct ModelSelectorMenu: View {
                     }
                 }
             } else {
-                Section("Active Provider") {
+                Section("Active Provider / Subscription") {
                     ForEach(ProviderType.allCases, id: \.self) { provider in
                         Button {
                             appState.settingsModel.activeProvider = provider
                         } label: {
                             HStack {
+                                Image(systemName: provider.icon)
                                 Text(provider.rawValue)
                                 if appState.settingsModel.activeProvider == provider {
                                     Image(systemName: "checkmark")
@@ -632,16 +633,93 @@ struct ModelSelectorMenu: View {
                     }
                 }
 
-                Section("\(appState.settingsModel.activeProvider.rawValue) Models") {
-                    ForEach(appState.settingsModel.modelsForActiveProvider(), id: \.self) { model in
-                        Button {
-                            appState.settingsModel.selectedModel = model
-                            appState.currentThreadViewModel.selectedModel = model
-                        } label: {
-                            HStack {
-                                Text(model)
-                                if appState.settingsModel.selectedModel == model {
-                                    Image(systemName: "checkmark")
+                let providerModels = appState.settingsModel.modelsForActiveProvider()
+                let reasoningModels = providerModels.filter {
+                    let m = $0.lowercased()
+                    return m.contains("reason") || m.contains("r1") || m.contains("o1") || m.contains("o3") || m.contains("thinking")
+                }
+                let codingModels = providerModels.filter {
+                    let m = $0.lowercased()
+                    return (m.contains("code") || m.contains("coder") || m.contains("glm") || m.contains("sonnet") || m.contains("mimo") || m.contains("kimi") || m.contains("qwen")) && !reasoningModels.contains($0)
+                }
+                let fastModels = providerModels.filter {
+                    let m = $0.lowercased()
+                    return (m.contains("flash") || m.contains("haiku") || m.contains("mini") || m.contains("8b")) && !reasoningModels.contains($0) && !codingModels.contains($0)
+                }
+                let otherModels = providerModels.filter {
+                    !reasoningModels.contains($0) && !codingModels.contains($0) && !fastModels.contains($0)
+                }
+
+                if !reasoningModels.isEmpty {
+                    Section("🧠 Reasoning & Thought (\(appState.settingsModel.activeProvider.rawValue))") {
+                        ForEach(reasoningModels, id: \.self) { model in
+                            Button {
+                                appState.settingsModel.selectedModel = model
+                                appState.currentThreadViewModel.selectedModel = model
+                            } label: {
+                                HStack {
+                                    Image(systemName: "brain.head.profile")
+                                    Text(model)
+                                    if appState.settingsModel.selectedModel == model {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !codingModels.isEmpty {
+                    Section("💻 Coding & Agentic (\(appState.settingsModel.activeProvider.rawValue))") {
+                        ForEach(codingModels, id: \.self) { model in
+                            Button {
+                                appState.settingsModel.selectedModel = model
+                                appState.currentThreadViewModel.selectedModel = model
+                            } label: {
+                                HStack {
+                                    Image(systemName: "chevron.left.forwardslash.chevron.right")
+                                    Text(model)
+                                    if appState.settingsModel.selectedModel == model {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !fastModels.isEmpty {
+                    Section("⚡ Fast & Low Latency (\(appState.settingsModel.activeProvider.rawValue))") {
+                        ForEach(fastModels, id: \.self) { model in
+                            Button {
+                                appState.settingsModel.selectedModel = model
+                                appState.currentThreadViewModel.selectedModel = model
+                            } label: {
+                                HStack {
+                                    Image(systemName: "bolt.fill")
+                                    Text(model)
+                                    if appState.settingsModel.selectedModel == model {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !otherModels.isEmpty {
+                    Section("🌐 Frontier & General (\(appState.settingsModel.activeProvider.rawValue))") {
+                        ForEach(otherModels, id: \.self) { model in
+                            Button {
+                                appState.settingsModel.selectedModel = model
+                                appState.currentThreadViewModel.selectedModel = model
+                            } label: {
+                                HStack {
+                                    Image(systemName: "sparkles")
+                                    Text(model)
+                                    if appState.settingsModel.selectedModel == model {
+                                        Image(systemName: "checkmark")
+                                    }
                                 }
                             }
                         }

@@ -317,12 +317,10 @@ public struct MessageBubbleView: View {
 
 // MARK: - RichMessageView
 
-/// Parses message content and renders text, code blocks, and inline formatting.
+/// Parses message content and renders full Markdown (headers, bullet/number/task lists, quotes, tables, code blocks).
 public struct RichMessageView: View {
     public let content: String
     public let isStreaming: Bool
-
-    @State private var copiedBlockID: String?
 
     public init(content: String, isStreaming: Bool = false) {
         self.content = content
@@ -330,23 +328,11 @@ public struct RichMessageView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(parsedSegments.enumerated()), id: \.offset) { _, segment in
-                switch segment {
-                case .text(let text):
-                    textSegment(text)
-                case .codeBlock(let language, let code, let id):
-                    CodeBlockView(
-                        language: language,
-                        code: code,
-                        isCopied: copiedBlockID == id
-                    ) {
-                        copyToClipboard(code)
-                        copiedBlockID = id
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            if copiedBlockID == id { copiedBlockID = nil }
-                        }
-                    }
+        VStack(alignment: .leading, spacing: 6) {
+            let elements = MarkdownParser.parse(markdown: content)
+            ForEach(elements) { element in
+                MarkdownBlockView(element: element) { code in
+                    copyToClipboard(code)
                 }
             }
 
@@ -356,104 +342,11 @@ public struct RichMessageView: View {
         }
     }
 
-    @ViewBuilder
-    private func textSegment(_ text: String) -> some View {
-        Text(LocalizedStringKey(sanitizedMarkdown(text)))
-            .font(.body)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func sanitizedMarkdown(_ text: String) -> String {
-        // Prevent broken SwiftUI rendering when raw tool output or path brackets are unbalanced
-        var cleaned = text
-        // Ensure double newlines around markdown headers so SwiftUI renders them properly
-        let headerRegex = try? NSRegularExpression(pattern: "(?m)^(#+\\s+.*)$", options: [])
-        if let headerRegex {
-            cleaned = headerRegex.stringByReplacingMatches(in: cleaned, options: [], range: NSRange(location: 0, length: (cleaned as NSString).length), withTemplate: "\n$1\n")
-        }
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     private func copyToClipboard(_ text: String) {
         #if os(macOS)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         #endif
-    }
-
-    // MARK: - Parsing
-
-    private enum ContentSegment: Identifiable {
-        case text(String)
-        case codeBlock(language: String, code: String, id: String)
-
-        var id: String {
-            switch self {
-            case .text(let t): return "text-\(t.hashValue)"
-            case .codeBlock(_, _, let id): return id
-            }
-        }
-    }
-
-    private var parsedSegments: [ContentSegment] {
-        var segments: [ContentSegment] = []
-        // Robust pattern matching both closed code blocks and open/streaming code blocks
-        let pattern = #"(?ms)(?:^|\n)[ \t]*```([^\n\r]*)\r?\n([\s\S]*?)(?:(?:\r?\n[ \t]*```)|\z)"#
-
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
-            return [.text(content)]
-        }
-
-        let nsContent = content as NSString
-        var lastEnd = 0
-        let matches = regex.matches(in: content, range: NSRange(content.startIndex..., in: content))
-
-        for match in matches {
-            // Text before code block
-            if match.range.location > lastEnd {
-                let textRange = NSRange(location: lastEnd, length: match.range.location - lastEnd)
-                let text = nsContent.substring(with: textRange).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty {
-                    segments.append(.text(text))
-                }
-            }
-
-            // Code block
-            let langRange = match.range(at: 1)
-            let codeRange = match.range(at: 2)
-            var rawLang = langRange.location != NSNotFound ? nsContent.substring(with: langRange).trimmingCharacters(in: .whitespacesAndNewlines) : ""
-            // Extract pure language token if metadata/filename is present (e.g. `swift title="Foo.swift"`)
-            if let firstToken = rawLang.components(separatedBy: .whitespaces).first {
-                rawLang = firstToken
-            }
-            let code = nsContent.substring(with: codeRange)
-            let trimmedCode = code.trimmingCharacters(in: .newlines)
-
-            if !trimmedCode.isEmpty || matches.count == 1 {
-                segments.append(.codeBlock(
-                    language: rawLang.isEmpty ? "code" : rawLang,
-                    code: trimmedCode,
-                    id: "block-\(match.range.location)"
-                ))
-            }
-
-            lastEnd = match.range.upperBound
-        }
-
-        // Trailing text
-        if lastEnd < nsContent.length {
-            let remaining = nsContent.substring(from: lastEnd).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !remaining.isEmpty {
-                segments.append(.text(remaining))
-            }
-        }
-
-        if segments.isEmpty {
-            segments.append(.text(content))
-        }
-
-        return segments
     }
 }
 
