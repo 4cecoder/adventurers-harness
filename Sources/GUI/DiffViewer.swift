@@ -3,6 +3,7 @@
 // Designed for high-clarity code review without nested sidebar clutter
 
 import SwiftUI
+import AdventurersCore
 
 // MARK: - Diff Line Model
 

@@ -248,8 +248,12 @@ final class AppState {
         }
         threadViewModels[item.id] = tvm
 
-        let diff = createSampleDiffState()
-        diffStates[item.id] = diff
+        let path = (workingDirectory as NSString).standardizingPath
+        if workspaceDiffStates[path] == nil {
+            let diff = DiffViewerState(workspacePath: path)
+            workspaceDiffStates[path] = diff
+            diff.loadLiveGitDiff(workspacePath: path)
+        }
 
         let gates = GatePipelineState()
         gateStates[item.id] = gates
@@ -270,7 +274,6 @@ final class AppState {
     func deleteThread(_ thread: ThreadItem) {
         threads.removeAll { $0.id == thread.id }
         threadViewModels.removeValue(forKey: thread.id)
-        diffStates.removeValue(forKey: thread.id)
         gateStates.removeValue(forKey: thread.id)
         ThreadStore.shared.deleteThread(id: thread.id)
 

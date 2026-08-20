@@ -102,7 +102,7 @@ public struct ThreadView: View {
                 isPaused: threadVM.isPaused,
                 queuedPrompts: threadVM.queuedPrompts,
                 onSend: {
-                    let diffState = appState?.selectedThreadID.flatMap { appState?.diffStates[$0] }
+                    let diffState = appState?.currentDiffState
                     threadVM.sendMessage(
                         settings: appState?.settingsModel,
                         terminalManager: appState?.terminalManager,
