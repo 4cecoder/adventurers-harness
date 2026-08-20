@@ -39,7 +39,7 @@ jobs:
             ${{ runner.os }}-spm-
 
       - name: Run Swift Tests
-        run: swift test --target AdventurersCoreTests
+        run: swift test --filter AdventurersCoreTests
 
       - name: Build Executable
         run: swift build -c release --triple arm64-apple-macosx15.0
