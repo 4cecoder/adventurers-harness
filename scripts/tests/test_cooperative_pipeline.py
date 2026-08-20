@@ -30,3 +30,12 @@ def test_internet_connectivity_check():
     # Socket probe returns boolean cleanly without crashing
     res = is_internet_available(timeout_sec=1.0)
     assert isinstance(res, bool)
+
+def test_hindsight_docker_guard():
+    from adventurers_py.memory_guard import is_hindsight_docker_running, HindsightMemoryManager
+    # Random unused port should return False safely without hanging
+    assert is_hindsight_docker_running(port=59999, timeout_sec=0.05) is False
+    
+    mgr = HindsightMemoryManager(docker_port=59999)
+    assert mgr.should_use_hindsight() is False
+    assert mgr.query_or_fallback("test") is None
