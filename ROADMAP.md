@@ -124,13 +124,19 @@
   - **Acceptance Criteria**: Serializes/deserializes LSP requests, notifications, and responses with error code handling.
   - **Microtest**: Passed `testJSONRPCFramer()`, `testChunkedJSONRPCFrames()`, and `testJSONRPCSerialization()`.
 
-- [ ] **Task 2.5: Native SourceKit-LSP Client Connection**
+- [x] **Task 2.5: Cactus Needle 2 On-Device Agentic Fast-Path & Compactor**
+  - **Target File**: `Sources/AdventurersCore/NeedleProcessor.swift`
+  - **Description**: Ultra-fast (<15ms, 14MB footprint, 28MB RAM) on-device intent classification, schema-constrained tool routing, and log compaction layer.
+  - **Acceptance Criteria**: Dispatches high-confidence developer tools (test runs, git status, git diff, grep searches) locally without cloud latency, and compresses noisy build/diff logs before cloud context injection.
+  - **Microtest**: Passed `testTestCommandRouting()`, `testGitRouting()`, `testGrepSearchRouting()`, `testCloudEscalation()`, `testBuildLogCompactor()`, and `testDiffCompactor()`.
+
+- [ ] **Task 2.6: Native SourceKit-LSP Client Connection**
   - **Target File**: `Sources/LSP/SourceKitLSPClient.swift`
   - **Description**: Launches and manages background `/usr/bin/sourcekit-lsp` server instance bound to the active workspace.
   - **Acceptance Criteria**: Sends `initialize`, `textDocument/didOpen`, `textDocument/didChange`, and receives diagnostics in real-time.
   - **Microtest**: `sourceKitLSPInitializeAndDiagnostics()`
 
-- [ ] **Task 2.6: Real-Time In-Memory LSP CompilationGate**
+- [ ] **Task 2.7: Real-Time In-Memory LSP CompilationGate**
   - **Target File**: `Sources/AdventurersCore/LSPCompilationGate.swift`
   - **Description**: Preflight proposed Swift changes against SourceKit-LSP diagnostics without touching disk or running full `swift build`.
   - **Acceptance Criteria**: Rejects syntax/type errors in under 50ms before writing changes.
