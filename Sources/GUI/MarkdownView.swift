@@ -132,7 +132,7 @@ public struct MarkdownBlockView: View {
                 .foregroundStyle(Color.adDivider)
                 .padding(.vertical, 4)
 
-        case .codeBlock(let language, let code, let id):
+        case .codeBlock(let language, let code, _):
             CodeBlockView(
                 language: language,
                 code: code,
