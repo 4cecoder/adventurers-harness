@@ -233,9 +233,9 @@ class CooperativeSmallModelSwarm:
 
             telemetry.append(ModelTelemetry(
                 role="Escalation Oracle",
-                model_name="Bonsai 27B (Responses API)",
+                model_name="Bonsai 27B (1-bit 5GB)",
                 params="27B",
-                size_mb=16000,
+                size_mb=5120,
                 latency_ms=t4_latency,
                 measured_tps=t4_tps,
                 status="ORACLE_PROVED_&_REPAIRED"

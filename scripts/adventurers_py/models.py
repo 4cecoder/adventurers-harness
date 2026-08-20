@@ -71,12 +71,12 @@ SMALL_MODELS_REGISTRY: Dict[str, SmallModelSpec] = {
         description="Dedicated coding agent workhorse for fast patches."
     ),
     "bonsai-27b": SmallModelSpec(
-        name="Bonsai 27B",
+        name="Bonsai 27B (1-bit)",
         id="prism-ml/bonsai-27b",
         params="27B",
-        quantized_size_mb=16000,
+        quantized_size_mb=5120,  # ~5.0 GB in 1-bit / 1.5-bit quantization
         context_window=32768,
         expected_tps=48.0,
-        description="Deep chain-of-thought frontier reasoning model via LM Studio /v1/responses."
+        description="Deep CoT frontier model (~5GB in 1-bit / BitNet CQ) via LM Studio /v1/responses."
     ),
 }
