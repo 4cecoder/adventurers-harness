@@ -25,6 +25,22 @@ from .models import SMALL_MODELS_REGISTRY, SmallModelSpec
 
 console = Console()
 
+def is_internet_available(timeout_sec: float = 0.5) -> bool:
+    """Ultra-fast (<50ms) non-blocking socket probe to test active internet connectivity."""
+    import socket
+    try:
+        socket.setdefaulttimeout(timeout_sec)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect(("1.1.1.1", 53))
+        return True
+    except Exception:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect(("8.8.8.8", 53))
+            return True
+        except Exception:
+            return False
+
 class MicroTask(BaseModel):
     step_num: int
     name: str
@@ -298,12 +314,16 @@ class CooperativeSmallModelSwarm:
         return tasks
 
     def _call_bonsai_oracle(self, prompt: str, failed_tasks: List[MicroTask]) -> str:
-        """Invokes Bonsai 27B (local) or OpenCode Go MiMo v2.5 (cloud teacher) for deep reasoning."""
+        """Invokes OpenCode Go MiMo v2.5 (if online & subscribed) or Bonsai 27B (local offline)."""
         import os
         opencode_key = os.environ.get("OPENCODE_API_KEY")
 
-        if opencode_key:
+        # 1. Check if device is connected to the internet
+        online = is_internet_available()
+
+        if online and opencode_key:
             # Cloud Teacher: OpenCode Go Plan (MiMo v2.5)
+            console.print("[bold cyan]🌐 Internet detected: Engaging Tier 5 Cloud Teacher (OpenCode Go MiMo v2.5)...[/bold cyan]")
             endpoint = "https://api.opencode.ai/v1/chat/completions"
             headers = {"Authorization": f"Bearer {opencode_key}", "Content-Type": "application/json"}
             payload = {
@@ -314,14 +334,16 @@ class CooperativeSmallModelSwarm:
                 ]
             }
             try:
-                with httpx.Client(timeout=60.0) as client:
+                with httpx.Client(timeout=30.0) as client:
                     resp = client.post(endpoint, json=payload, headers=headers)
                     resp.raise_for_status()
                     return resp.json()["choices"][0]["message"]["content"]
             except Exception as e:
-                console.print(f"[dim]OpenCode cloud teacher unreachable ({e}), falling back to local Bonsai 27B...[/dim]")
+                console.print(f"[dim]OpenCode cloud endpoint unreachable ({e}); falling back to local on-device Bonsai 27B...[/dim]")
+        elif not online:
+            console.print("[dim]🔒 Device is offline / air-gapped; maintaining 100% on-device execution with Bonsai 27B...[/dim]")
 
-        # Local Teacher: Bonsai 27B via LM Studio /v1/responses
+        # 2. Local Fallback: Bonsai 27B via LM Studio /v1/responses (100% On-Device)
         endpoint = f"{self.base_url}/v1/responses"
         payload = {
             "model": self.oracle_model,

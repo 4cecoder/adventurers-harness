@@ -24,3 +24,9 @@ def test_decomposed_swarm_execution():
     assert report.micro_tasks[0].status == "VERIFIED"
     assert report.micro_tasks[1].status == "VERIFIED"
     assert report.escalated_to_bonsai is False
+
+def test_internet_connectivity_check():
+    from adventurers_py.cooperative_pipeline import is_internet_available
+    # Socket probe returns boolean cleanly without crashing
+    res = is_internet_available(timeout_sec=1.0)
+    assert isinstance(res, bool)
