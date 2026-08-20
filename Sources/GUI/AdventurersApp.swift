@@ -388,8 +388,26 @@ final class AppState {
         }
     }
 
-    private func createSampleDiffState() -> DiffViewerState {
-        return SeedData.createRichDiffState()
+    func selectNextThread() {
+        guard !threads.isEmpty else { return }
+        guard let currentID = selectedThreadID,
+              let currentIndex = threads.firstIndex(where: { $0.id == currentID }) else {
+            selectedThreadID = threads.first?.id
+            return
+        }
+        let nextIndex = (currentIndex + 1) % threads.count
+        selectedThreadID = threads[nextIndex].id
+    }
+
+    func selectPreviousThread() {
+        guard !threads.isEmpty else { return }
+        guard let currentID = selectedThreadID,
+              let currentIndex = threads.firstIndex(where: { $0.id == currentID }) else {
+            selectedThreadID = threads.first?.id
+            return
+        }
+        let prevIndex = (currentIndex - 1 + threads.count) % threads.count
+        selectedThreadID = threads[prevIndex].id
     }
 }
 
@@ -1591,6 +1609,25 @@ struct AgentCommands: Commands {
                 appState.activeTab = .skills
             }
             .keyboardShortcut("4", modifiers: .command)
+        }
+
+        CommandMenu("Thread") {
+            Button("Next Thread") {
+                appState.selectNextThread()
+            }
+            .keyboardShortcut("]", modifiers: .command)
+
+            Button("Previous Thread") {
+                appState.selectPreviousThread()
+            }
+            .keyboardShortcut("[", modifiers: .command)
+
+            Divider()
+
+            Button("Refresh Workspace Git Diff") {
+                appState.currentDiffState.loadLiveGitDiff(workspacePath: appState.currentWorkspacePath)
+            }
+            .keyboardShortcut("r", modifiers: .command)
         }
 
         CommandMenu("Run") {
