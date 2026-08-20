@@ -49,7 +49,14 @@ struct CrashReporterTests {
 
     @Test("CrashReporterManager saves report and retrieves from disk")
     func saveAndListCrashReports() {
-        let manager = CrashReporterManager.shared
+        // Uses an isolated temp directory (not the real ~/.adventurers/crashes) so running the
+        // test suite never pollutes the user's actual crash log with fixture data, and skips
+        // installing process-wide signal handlers since this test only exercises save/list.
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("adventurers-crash-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let manager = CrashReporterManager(crashDirectoryOverride: tempDir, installHandlers: false)
         let initialCount = manager.listCrashReports().count
 
         let testReport = manager.recordCrash(

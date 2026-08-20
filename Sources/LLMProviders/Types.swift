@@ -59,12 +59,24 @@ public struct ToolCall: Sendable, Codable {
     public let id: String
     public let name: String
     public let arguments: [String: AnyCodable]
+
+    public init(id: String, name: String, arguments: [String: AnyCodable]) {
+        self.id = id
+        self.name = name
+        self.arguments = arguments
+    }
 }
 
 public struct TokenUsage: Sendable {
     public let promptTokens: Int
     public let completionTokens: Int
     public let totalTokens: Int
+
+    public init(promptTokens: Int, completionTokens: Int, totalTokens: Int) {
+        self.promptTokens = promptTokens
+        self.completionTokens = completionTokens
+        self.totalTokens = totalTokens
+    }
 }
 
 // MARK: - Configuration
@@ -149,5 +161,6 @@ public protocol LLMProvider: Sendable {
 public enum LLMError: Error, Sendable {
     case apiError(statusCode: Int)
     case decodingError
+    case encodingError
     case networkError(Error)
 }

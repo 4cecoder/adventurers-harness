@@ -6,6 +6,7 @@
 
 import Foundation
 import os.lock
+import Darwin
 
 // MARK: - Crash Report Model
 
@@ -125,8 +126,12 @@ public final class CrashReporterManager: @unchecked Sendable {
     public var activeExecutionMode: String?
     public var activeThreadID: String?
 
+    /// Overrides `crashDirectory` when set. Used to isolate tests from the real,
+    /// on-disk `~/.adventurers/crashes` directory so test fixtures never pollute it.
+    private let directoryOverride: URL?
+
     public var crashDirectory: URL {
-        let base = FileManager.default.homeDirectoryForCurrentUser
+        let base = directoryOverride ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".adventurers", isDirectory: true)
             .appendingPathComponent("crashes", isDirectory: true)
         if !FileManager.default.fileExists(atPath: base.path) {
@@ -135,8 +140,18 @@ public final class CrashReporterManager: @unchecked Sendable {
         return base
     }
 
-    public init() {
-        installUncaughtExceptionHandler()
+    /// - Parameters:
+    ///   - crashDirectoryOverride: When non-nil, crash reports are read/written here instead of
+    ///     the real `~/.adventurers/crashes` directory. Intended for tests.
+    ///   - installHandlers: Whether to promote any pending raw crash from a previous launch and
+    ///     install the process-wide signal/exception handlers. Tests that only exercise
+    ///     save/list/format logic should pass `false` to avoid touching global signal state.
+    public init(crashDirectoryOverride: URL? = nil, installHandlers: Bool = true) {
+        self.directoryOverride = crashDirectoryOverride
+        if installHandlers {
+            promotePendingRawCrashesIfNeeded()
+            installUncaughtExceptionHandler()
+        }
     }
 
     // MARK: - Breadcrumb Tracking
@@ -156,14 +171,50 @@ public final class CrashReporterManager: @unchecked Sendable {
         lock.withLock { _breadcrumbs }
     }
 
-    // MARK: - Handler Installation
+    // MARK: - Async-Signal-Safe Crash Capture
+    //
+    // A POSIX signal handler must not call malloc, take locks, or touch the Swift/ObjC runtime —
+    // if the crashing thread already held the allocator's internal lock (a common case for
+    // SIGABRT/SIGSEGV), doing so self-deadlocks the process instead of producing a report, and the
+    // "crash" just silently hangs or gets killed with nothing on disk. The previous implementation
+    // called straight into JSONEncoder/FileManager/String interpolation from inside the handler.
+    //
+    // Instead, the handler here only touches two primitives that don't allocate:
+    //   - `backtrace()` into a preallocated static buffer (no malloc).
+    //   - `backtrace_symbols_fd()`, which per its man page "does not call malloc(3)" and writes
+    //     directly to a file descriptor that was opened ahead of time, outside signal context.
+    // Each monitored signal gets its own pre-opened fd so the handler never needs to format a
+    // filename. The resulting raw dump is picked up and turned into a full `CrashReport` the next
+    // time the app launches, via `promotePendingRawCrashesIfNeeded()`.
+
+    private static let monitoredSignals: [(name: String, signal: Int32)] = [
+        ("SIGSEGV", SIGSEGV), ("SIGBUS", SIGBUS), ("SIGABRT", SIGABRT),
+        ("SIGILL", SIGILL), ("SIGFPE", SIGFPE), ("SIGTRAP", SIGTRAP)
+    ]
+
+    nonisolated(unsafe) private static var pendingCrashFDs: [Int32: Int32] = [:]
+    nonisolated(unsafe) private static var backtraceStorage = [UnsafeMutableRawPointer?](repeating: nil, count: 128)
+    nonisolated(unsafe) private static var altStackPointer: UnsafeMutableRawPointer?
+    nonisolated(unsafe) private static var isHandlingSignal: sig_atomic_t = 0
+
+    private func pendingCrashFileURL(for signalName: String) -> URL {
+        crashDirectory.appendingPathComponent(".pending_crash_\(signalName).raw")
+    }
+
+    private func openPendingCrashFD(for signalName: String) -> Int32 {
+        let path = pendingCrashFileURL(for: signalName).path
+        return path.withCString { open($0, O_WRONLY | O_CREAT | O_TRUNC, 0o644) }
+    }
 
     public func installUncaughtExceptionHandler() {
         NSSetUncaughtExceptionHandler { exception in
             let symbols = exception.callStackSymbols
             let name = exception.name.rawValue
             let reason = exception.reason ?? "Unknown NSException"
-            
+
+            // NSSetUncaughtExceptionHandler runs in normal application context (invoked by the
+            // ObjC runtime before it terminates the process), not inside an async signal handler,
+            // so it's safe to use Foundation/JSON here.
             CrashReporterManager.shared.recordCrash(
                 signal: nil,
                 exceptionName: name,
@@ -172,35 +223,78 @@ public final class CrashReporterManager: @unchecked Sendable {
             )
         }
 
-        // Install signal traps
-        let signals = [SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE, SIGTRAP]
-        for sig in signals {
+        // Pre-open one raw fd per monitored signal, in this safe (non-signal) context.
+        for entry in Self.monitoredSignals {
+            Self.pendingCrashFDs[entry.signal] = openPendingCrashFD(for: entry.name)
+        }
+
+        // Dedicated alternate signal stack so a stack-overflow SIGSEGV can still be handled
+        // (the thread's normal stack is unusable at that point).
+        let altStackSize = 65536
+        let stackPointer = UnsafeMutableRawPointer.allocate(byteCount: altStackSize, alignment: 16)
+        Self.altStackPointer = stackPointer
+        var altStack = stack_t()
+        altStack.ss_sp = stackPointer
+        altStack.ss_size = altStackSize
+        altStack.ss_flags = 0
+        sigaltstack(&altStack, nil)
+
+        for entry in Self.monitoredSignals {
             var action = sigaction()
             action.__sigaction_u.__sa_handler = { signum in
-                let symbols = Thread.callStackSymbols
-                let sigName: String
-                switch signum {
-                case SIGSEGV: sigName = "SIGSEGV (Segmentation Fault)"
-                case SIGBUS:  sigName = "SIGBUS (Bus Error)"
-                case SIGABRT: sigName = "SIGABRT (Abort Process)"
-                case SIGILL:  sigName = "SIGILL (Illegal Instruction)"
-                case SIGFPE:  sigName = "SIGFPE (Floating Point Error)"
-                case SIGTRAP: sigName = "SIGTRAP (Trace/Breakpoint Trap)"
-                default:      sigName = "Signal \(signum)"
+                // Guard re-entrancy: a crash while already handling a crash just falls through
+                // to the default handler instead of looping or double-writing.
+                if CrashReporterManager.isHandlingSignal != 0 {
+                    signal(signum, SIG_DFL)
+                    raise(signum)
+                    return
+                }
+                CrashReporterManager.isHandlingSignal = 1
+
+                if let fd = CrashReporterManager.pendingCrashFDs[signum], fd >= 0 {
+                    let count = backtrace(&CrashReporterManager.backtraceStorage, Int32(CrashReporterManager.backtraceStorage.count))
+                    backtrace_symbols_fd(&CrashReporterManager.backtraceStorage, count, fd)
                 }
 
-                CrashReporterManager.shared.recordCrash(
-                    signal: sigName,
-                    exceptionName: nil,
-                    exceptionReason: "Fatal Unix Signal",
-                    callStack: symbols
-                )
-
-                // Restore default handler and re-raise
+                // Restore default handler and re-raise so the OS's own crash reporting
+                // (and debuggers) still see the fatal signal.
                 signal(signum, SIG_DFL)
                 raise(signum)
             }
-            sigaction(sig, &action, nil)
+            action.sa_flags = SA_ONSTACK
+            sigemptyset(&action.sa_mask)
+            sigaction(entry.signal, &action, nil)
+        }
+    }
+
+    /// Reads any raw crash dump left behind by a fatal signal on a previous run, converts it into
+    /// a full `CrashReport`, and clears the raw file. Safe to call from normal (non-signal) context.
+    private func promotePendingRawCrashesIfNeeded() {
+        for entry in Self.monitoredSignals {
+            let url = pendingCrashFileURL(for: entry.name)
+            guard let data = try? Data(contentsOf: url), !data.isEmpty,
+                  let raw = String(data: data, encoding: .utf8) else { continue }
+
+            let callStack = raw.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+            recordCrash(
+                signal: Self.signalDisplayName(for: entry.signal),
+                exceptionName: nil,
+                exceptionReason: "Process terminated by a fatal signal on the previous launch",
+                callStack: callStack
+            )
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    private static func signalDisplayName(for signum: Int32) -> String {
+        switch signum {
+        case SIGSEGV: return "SIGSEGV (Segmentation Fault)"
+        case SIGBUS:  return "SIGBUS (Bus Error)"
+        case SIGABRT: return "SIGABRT (Abort Process)"
+        case SIGILL:  return "SIGILL (Illegal Instruction)"
+        case SIGFPE:  return "SIGFPE (Floating Point Error)"
+        case SIGTRAP: return "SIGTRAP (Trace/Breakpoint Trap)"
+        default:      return "Signal \(signum)"
         }
     }
 

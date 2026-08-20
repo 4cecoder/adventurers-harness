@@ -28,6 +28,31 @@ struct LMStudioBridgeTests {
         #expect(model.contextLength == 32768)
     }
 
+    @Test("LM Studio Tool and Function Definition encodes properly matching OpenAI Responses schema")
+    func testToolDefinitionSchemaEncoding() throws {
+        let params: [String: AnyCodable] = [
+            "type": AnyCodable("object"),
+            "properties": AnyCodable([
+                "location": ["type": "string", "description": "The city and state, e.g. San Francisco, CA"],
+                "unit": ["type": "string", "enum": ["celsius", "fahrenheit"]]
+            ]),
+            "required": AnyCodable(["location", "unit"])
+        ]
+
+        let tool = LMStudioTool(
+            name: "get_current_weather",
+            description: "Get the current weather in a given location",
+            parameters: params
+        )
+
+        let encoded = try JSONEncoder().encode(tool)
+        let json = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+
+        #expect(json?["type"] as? String == "function")
+        #expect(json?["name"] as? String == "get_current_weather")
+        #expect(json?["description"] as? String == "Get the current weather in a given location")
+    }
+
     @Test("LM Studio Bridge server status probe returns structured offline state when server is unreachable")
     func testOfflineServerProbe() async {
         let bridge = LMStudioBridge.shared
