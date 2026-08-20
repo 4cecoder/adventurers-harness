@@ -282,16 +282,13 @@ public final class DictationManager: NSObject, ObservableObject {
             self.audioEngine = engine
 
             let node = engine.inputNode
-            guard node.numberOfInputs > 0 else {
-                state = .error("No microphone hardware input detected.")
-                return
-            }
-
             let nativeFormat = node.outputFormat(forBus: 0)
             
-            // Validate audio format sample rate
-            guard nativeFormat.sampleRate > 0 && nativeFormat.channelCount > 0 else {
-                state = .error("Audio input hardware unavailable or sample rate is 0.")
+            // Validate audio format sample rate and channel count
+            let sampleRate = nativeFormat.sampleRate
+            let channels = nativeFormat.channelCount
+            guard sampleRate > 0 && channels > 0 else {
+                state = .error("Microphone hardware is busy or sample rate is uninitialized.")
                 return
             }
 
@@ -329,7 +326,8 @@ public final class DictationManager: NSObject, ObservableObject {
                 }
             }
 
-            node.installTap(onBus: 0, bufferSize: 1024, format: nativeFormat) { [weak self] buffer, _ in
+            // Using nil format lets CoreAudio provide the native input format safely
+            node.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
                 self?.recognitionRequest?.append(buffer)
                 self?.tapHandler.handleBuffer(buffer)
             }
@@ -342,7 +340,7 @@ public final class DictationManager: NSObject, ObservableObject {
             startLevelTimer()
             resetSilenceTimer()
         } catch {
-            state = .error("Audio engine failed: \(error.localizedDescription)")
+            state = .error("Audio engine error: \(error.localizedDescription)")
             stopDictation()
         }
     }

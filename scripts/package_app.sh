@@ -109,8 +109,8 @@ PLIST
 echo -n "APPL????" > "${APP_DIR}/Contents/PkgInfo"
 
 # Step 4: Ad-hoc code signing for local & Apple Silicon execution
-echo "🔏 Signing bundle with ad-hoc identity..."
-codesign --force --deep --sign - "${APP_DIR}"
+echo "🔏 Signing bundle with ad-hoc identity & audio entitlements..."
+codesign --force --deep --entitlements "${ROOT_DIR}/entitlements.plist" --sign - "${APP_DIR}"
 
 # Step 5: Package into distributable DMG
 echo "💿 Creating DMG installer..."

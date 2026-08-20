@@ -34,13 +34,8 @@ struct WorkbenchStatusBar: View {
 
             Spacer(minLength: 8)
 
-            // ── Center: Context Window Capacity Meter ──
+            // ── Center/Right: Context Window Capacity Meter ──
             contextWindowMeter
-
-            Spacer(minLength: 8)
-
-            // ── Right: Live Metering & Telemetry Telemetry ──
-            rightTelemetryCluster
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
@@ -54,9 +49,6 @@ struct WorkbenchStatusBar: View {
                     alignment: .top
                 )
         )
-        .popover(isPresented: $showingTelemetryPopover, arrowEdge: .bottom) {
-            TelemetryDetailPopover(metering: meteringState, model: appState.settingsModel.selectedModel)
-        }
     }
 
     // MARK: - Left Status Cluster
