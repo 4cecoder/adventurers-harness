@@ -57,6 +57,10 @@ docs/ida-reverse-engineering.md
 *.bin
 *.dylib
 
+# Python (helper scripts under scripts/)
+__pycache__/
+*.pyc
+
 # Local App Data & Credentials
 data/
 *.log
