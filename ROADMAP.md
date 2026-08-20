@@ -112,17 +112,17 @@
   - **Description**: Fast tokenizing state machine parsing ANSI standard 16 colors, 256-color palette, 24-bit TrueColor RGB, text styles (bold, dim, italic, underline, inverse), and ANSI stripping.
   - **Microtest**: Passed `parseStandardANSIColors()`, `parseExtendedANSIColors()`, `stripANSIEscapeSequences()`.
 
-- [ ] **Task 2.3: Bi-Directional Interactive Stdin Controller**
-  - **Target File**: `Sources/GUI/TerminalStdinController.swift`
-  - **Description**: Forward user keystrokes (Ctrl+C, Ctrl+D, arrow keys, Tab auto-complete) into running sub-processes.
+- [x] **Task 2.3: Bi-Directional Interactive Stdin Controller**
+  - **Target File**: `Sources/AdventurersCore/TerminalStdinController.swift`
+  - **Description**: Forward user keystrokes (Ctrl+C, Ctrl+D, Ctrl+Z, arrow keys, Tab auto-complete) into running sub-processes.
   - **Acceptance Criteria**: Interactive tools like `vim`, `htop`, `git rebase -i`, and CLI prompts respond interactively in the terminal panel.
-  - **Microtest**: `terminalStdinKeystrokePiping()`
+  - **Microtest**: Passed `testTerminalKeyEncoding()` and `testStdinHistoryNavigation()`.
 
-- [ ] **Task 2.4: JSON-RPC 2.0 Asynchronous Transport Engine**
-  - **Target File**: `Sources/LSP/JSONRPCTransport.swift`
+- [x] **Task 2.4: JSON-RPC 2.0 Asynchronous Transport Engine**
+  - **Target File**: `Sources/AdventurersCore/JSONRPCTransport.swift`
   - **Description**: Pure Swift async/await JSON-RPC 2.0 framed transport with `Content-Length` headers for Language Server Protocol communication.
   - **Acceptance Criteria**: Serializes/deserializes LSP requests, notifications, and responses with error code handling.
-  - **Microtest**: `jsonRpcFramingAndMessageDispatch()`
+  - **Microtest**: Passed `testJSONRPCFramer()`, `testChunkedJSONRPCFrames()`, and `testJSONRPCSerialization()`.
 
 - [ ] **Task 2.5: Native SourceKit-LSP Client Connection**
   - **Target File**: `Sources/LSP/SourceKitLSPClient.swift`

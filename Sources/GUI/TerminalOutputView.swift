@@ -3,6 +3,7 @@
 
 import SwiftUI
 import Foundation
+import AdventurersCore
 
 // MARK: - Models
 
@@ -36,6 +37,8 @@ public final class TerminalSession: Identifiable {
     public var isRunning: Bool = false
     public var exitCode: Int?
     public var activeProcess: Process?
+    public var pty: TerminalPTY?
+    public let stdinController = TerminalStdinController()
 
     public init(id: UUID = UUID(), name: String = "Interactive Shell") {
         self.id = id
@@ -68,6 +71,7 @@ public final class TerminalSession: Identifiable {
         self.exitCode = exitCode
         self.isRunning = false
         self.activeProcess = nil
+        self.pty = nil
         let icon = exitCode == 0 ? "✓" : "✗"
         lines.append(TerminalLine(timestamp: Date(), content: "\(icon) Process completed with exit code \(exitCode)", type: .info))
     }
@@ -78,15 +82,31 @@ public final class TerminalSession: Identifiable {
     }
 
     public func terminate() {
+        if let p = pty {
+            p.closePTY()
+            self.pty = nil
+        }
         if let proc = activeProcess, proc.isRunning {
             proc.terminate()
-            appendInfo("Process terminated by user.")
-            self.isRunning = false
             self.activeProcess = nil
+        }
+        appendInfo("Process terminated by user.")
+        self.isRunning = false
+    }
+
+    public func sendStdin(_ input: String) {
+        if let p = pty {
+            p.writeInput(input + "\n")
+        } else {
+            stdinController.sendLine(input)
         }
     }
 
-    /// Run a bash/zsh command in the background and stream output
+    public func sendKey(_ key: TerminalKey) {
+        stdinController.sendKey(key)
+    }
+
+    /// Run a bash/zsh command with full interactive PTY subsystem
     public func executeCommand(_ cmd: String, cwd: String? = nil) {
         let trimmed = cmd.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -102,58 +122,85 @@ public final class TerminalSession: Identifiable {
 
         let workDir = cwd ?? FileManager.default.currentDirectoryPath
 
-        Task.detached(priority: .userInitiated) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            process.arguments = ["-c", trimmed]
-            process.currentDirectoryURL = URL(fileURLWithPath: workDir)
+        do {
+            let ptyInstance = try TerminalPTY()
+            self.pty = ptyInstance
+            stdinController.attach(pty: ptyInstance)
 
-            var env = ProcessInfo.processInfo.environment
-            env["TERM"] = "xterm-256color"
-            env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
-            process.environment = env
-
-            let outPipe = Pipe()
-            let errPipe = Pipe()
-            process.standardOutput = outPipe
-            process.standardError = errPipe
-
-            let outHandle = outPipe.fileHandleForReading
-            let errHandle = errPipe.fileHandleForReading
-
-            outHandle.readabilityHandler = { handle in
-                let data = handle.availableData
-                guard !data.isEmpty, let str = String(data: data, encoding: .utf8) else { return }
+            ptyInstance.onOutputReceived = { [weak self] data in
+                guard let str = String(data: data, encoding: .utf8) else { return }
                 Task { @MainActor [weak self] in
                     self?.appendOutput(str)
                 }
             }
 
-            errHandle.readabilityHandler = { handle in
-                let data = handle.availableData
-                guard !data.isEmpty, let str = String(data: data, encoding: .utf8) else { return }
+            ptyInstance.onProcessTerminated = { [weak self] code in
                 Task { @MainActor [weak self] in
-                    self?.appendError(str)
+                    self?.finish(exitCode: Int(code))
                 }
             }
 
-            do {
-                try process.run()
-                await MainActor.run { [weak self] in
-                    self?.activeProcess = process
-                }
-                process.waitUntilExit()
-                outHandle.readabilityHandler = nil
-                errHandle.readabilityHandler = nil
+            try ptyInstance.spawn(
+                executable: "/bin/zsh",
+                arguments: ["-c", trimmed],
+                workingDirectory: workDir
+            )
+        } catch {
+            appendInfo("PTY init fallback: \(error.localizedDescription)")
+            // Fallback to standard process runner
+            Task.detached(priority: .userInitiated) {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+                process.arguments = ["-c", trimmed]
+                process.currentDirectoryURL = URL(fileURLWithPath: workDir)
 
-                let code = Int(process.terminationStatus)
-                await MainActor.run { [weak self] in
-                    self?.finish(exitCode: code)
+                var env = ProcessInfo.processInfo.environment
+                env["TERM"] = "xterm-256color"
+                env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
+                process.environment = env
+
+                let outPipe = Pipe()
+                let errPipe = Pipe()
+                process.standardOutput = outPipe
+                process.standardError = errPipe
+
+                let outHandle = outPipe.fileHandleForReading
+                let errHandle = errPipe.fileHandleForReading
+
+                outHandle.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    guard !data.isEmpty, let str = String(data: data, encoding: .utf8) else { return }
+                    Task { @MainActor [weak self] in
+                        self?.appendOutput(str)
+                    }
                 }
-            } catch {
-                await MainActor.run { [weak self] in
-                    self?.appendError("Failed to launch command: \(error.localizedDescription)")
-                    self?.finish(exitCode: 1)
+
+                errHandle.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    guard !data.isEmpty, let str = String(data: data, encoding: .utf8) else { return }
+                    Task { @MainActor [weak self] in
+                        self?.appendError(str)
+                    }
+                }
+
+                do {
+                    try process.run()
+                    await MainActor.run { [weak self] in
+                        self?.activeProcess = process
+                    }
+                    process.waitUntilExit()
+                    outHandle.readabilityHandler = nil
+                    errHandle.readabilityHandler = nil
+
+                    let code = Int(process.terminationStatus)
+                    await MainActor.run { [weak self] in
+                        self?.finish(exitCode: code)
+                    }
+                } catch {
+                    await MainActor.run { [weak self] in
+                        self?.appendError("Failed to launch command: \(error.localizedDescription)")
+                        self?.finish(exitCode: 1)
+                    }
                 }
             }
         }
@@ -633,21 +680,57 @@ public struct TerminalOutputView: View {
         .clipShape(RoundedRectangle(cornerRadius: 3))
     }
 
+    private var isSessionRunning: Bool {
+        manager.activeSession?.isRunning ?? false
+    }
+
     // MARK: - Interactive Input Bar
 
     private var interactiveInputBar: some View {
         HStack(spacing: 8) {
             Text("❯")
-                .foregroundStyle(Color.adOrange)
+                .foregroundStyle(isSessionRunning ? Color.cyan : Color.adOrange)
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
 
-            TextField("Type a bash command (e.g. swift test, git status)...", text: $inputCommand)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(Color.adTextPrimary)
-                .onSubmit {
-                    submitCommand()
+            TextField(
+                isSessionRunning ? "Send interactive stdin (or ⌃C to interrupt)..." : "Type a bash command (e.g. swift test, git status)...",
+                text: $inputCommand
+            )
+            .textFieldStyle(.plain)
+            .font(.system(size: 12, design: .monospaced))
+            .foregroundStyle(Color.adTextPrimary)
+            .onSubmit {
+                submitCommand()
+            }
+
+            if isSessionRunning {
+                // Quick Keystroke Chips
+                HStack(spacing: 4) {
+                    Button("^C") {
+                        manager.activeSession?.sendKey(.ctrl("c"))
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.adError.opacity(0.2))
+                    .foregroundStyle(Color.adError)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .help("Send SIGINT (Ctrl+C)")
+
+                    Button("^D") {
+                        manager.activeSession?.sendKey(.ctrl("d"))
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.adElevated)
+                    .foregroundStyle(Color.adTextSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .help("Send EOF (Ctrl+D)")
                 }
+            }
 
             if !inputCommand.isEmpty {
                 Button {
@@ -655,7 +738,7 @@ public struct TerminalOutputView: View {
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 14))
-                        .foregroundStyle(Color.adOrange)
+                        .foregroundStyle(isSessionRunning ? Color.cyan : Color.adOrange)
                 }
                 .buttonStyle(.plain)
             }
@@ -668,6 +751,13 @@ public struct TerminalOutputView: View {
     private func submitCommand() {
         let cmd = inputCommand.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cmd.isEmpty else { return }
+
+        if let session = manager.activeSession, session.isRunning {
+            session.sendStdin(cmd)
+            inputCommand = ""
+            return
+        }
+
         commandHistory.append(cmd)
         historyIndex = commandHistory.count
         inputCommand = ""
