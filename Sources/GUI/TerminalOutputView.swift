@@ -614,11 +614,17 @@ public struct TerminalOutputView: View {
             .frame(width: 12, alignment: .center)
 
             // Content
-            Text(line.content)
-                .textSelection(.enabled)
-                .foregroundStyle(lineColor(line.type))
-                .lineLimit(wordWrap ? nil : 1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if line.content.contains("\u{1B}") {
+                TerminalANSIView(rawContent: line.content, fontSize: 11)
+                    .lineLimit(wordWrap ? nil : 1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(line.content)
+                    .textSelection(.enabled)
+                    .foregroundStyle(lineColor(line.type))
+                    .lineLimit(wordWrap ? nil : 1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 1)
