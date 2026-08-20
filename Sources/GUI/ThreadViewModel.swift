@@ -62,6 +62,14 @@ public final class ThreadViewModel: ObservableObject {
             loadPlaceholderMessages()
             meteringState.recalculateContext(messages: self.messages)
         }
+
+        Task { [weak self] in
+            guard let self else { return }
+            await self.toolApprovalManager.setApprovalHandler { [weak self] request in
+                guard let self else { return .denied(reason: "No active thread to confirm with") }
+                return await self.presentApprovalDialog(for: request)
+            }
+        }
     }
 
     /// Checks old messages on opening thread and compounds multi-turn tool call runs into clean single cards.
@@ -761,14 +769,7 @@ public final class ThreadViewModel: ObservableObject {
     /// Gatekeeps every native tool call — including the Cactus Needle 2 fast-path — behind a
     /// user-facing approval prompt. Nothing should call `toolExecutor.execute` directly; route
     /// through `executeNativeTool` instead so approval can't be bypassed.
-    private lazy var toolApprovalManager: ToolApprovalManager = {
-        let manager = ToolApprovalManager(defaultTimeoutSeconds: 180)
-        Task { await manager.setApprovalHandler { [weak self] request in
-            guard let self else { return .denied(reason: "No active thread to confirm with") }
-            return await self.presentApprovalDialog(for: request)
-        }}
-        return manager
-    }()
+    private let toolApprovalManager = ToolApprovalManager(defaultTimeoutSeconds: 180)
 
     private func extractToolCalls(from text: String) -> [ThreadToolCallParser.ToolInvocation] {
         toolParser.extractToolCalls(from: text)
