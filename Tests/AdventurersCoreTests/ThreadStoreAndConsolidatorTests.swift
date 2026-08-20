@@ -50,10 +50,10 @@ struct ThreadStoreAndConsolidatorTests {
     @MainActor
     func testUserMessageBoundaries() {
         let now = Date()
-        let user1 = ThreadMessage(id: "u1", role: ThreadMessage.MessageRole.user, content: "Do task 1", timestamp: now)
-        let agent1 = ThreadMessage(id: "a1", role: ThreadMessage.MessageRole.agent, content: "Done 1", timestamp: now.addingTimeInterval(2))
-        let user2 = ThreadMessage(id: "u2", role: ThreadMessage.MessageRole.user, content: "Do task 2", timestamp: now.addingTimeInterval(10))
-        let agent2 = ThreadMessage(id: "a2", role: ThreadMessage.MessageRole.agent, content: "Done 2", timestamp: now.addingTimeInterval(12))
+        let user1 = AdventurersCore.ThreadMessage(id: "u1", role: AdventurersCore.ThreadMessage.MessageRole.user, content: "Do task 1", timestamp: now)
+        let agent1 = AdventurersCore.ThreadMessage(id: "a1", role: AdventurersCore.ThreadMessage.MessageRole.agent, content: "Done 1", timestamp: now.addingTimeInterval(2))
+        let user2 = AdventurersCore.ThreadMessage(id: "u2", role: AdventurersCore.ThreadMessage.MessageRole.user, content: "Do task 2", timestamp: now.addingTimeInterval(10))
+        let agent2 = AdventurersCore.ThreadMessage(id: "a2", role: AdventurersCore.ThreadMessage.MessageRole.agent, content: "Done 2", timestamp: now.addingTimeInterval(12))
 
         let consolidated = ThreadMessageConsolidator.consolidate([user1, agent1, user2, agent2])
         #expect(consolidated.count == 4)
