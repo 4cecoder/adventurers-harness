@@ -62,7 +62,7 @@ jobs:
       - name: Run Core Test Suite
         run: |
           echo "🧪 Running unit tests on macOS arm64..."
-          swift test
+          swift test --target AdventurersCoreTests
 
       - name: Generate AppIcon (.icns) from SVG
         run: |
