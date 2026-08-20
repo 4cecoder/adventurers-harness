@@ -110,10 +110,17 @@ jobs:
           cat dist/*.sha256
 
       - name: Generate Signed Sparkle Appcast
-        if: ${{ env.CHANNEL != 'none' && secrets.SPARKLE_PRIVATE_KEY != '' }}
+        if: ${{ env.CHANNEL != 'none' }}
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
+          # The `secrets` context isn't available in step `if:` conditions, so the "is a signing
+          # key configured" check has to happen here instead of at the step level.
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "⚠️  SPARKLE_PRIVATE_KEY not set — skipping appcast generation (see docs/updating.md)."
+            exit 0
+          fi
+
           # All three channels share ONE appcast feed (SUFeedURL always points at the `latest`
           # release's appcast.xml) — Sparkle tells channels apart via a <sparkle:channel> tag per
           # item, not via separate feeds. Fetch the existing feed first so new entries accumulate
@@ -144,7 +151,7 @@ jobs:
           retention-days: 14
 
       - name: Upload Appcast Artifact
-        if: ${{ env.CHANNEL != 'none' && secrets.SPARKLE_PRIVATE_KEY != '' }}
+        if: ${{ env.CHANNEL != 'none' }}
         uses: actions/upload-artifact@v4
         with:
           name: Adventurers-appcast
