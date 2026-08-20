@@ -161,7 +161,16 @@ public final class SettingsModel {
             "phi-4",
             "loaded-model"
         ],
-        .local: ["qwen2.5-coder:32b", "deepseek-r1:14b", "deepseek-r1:32b", "llama3.3:70b", "hermes3:8b", "mistral-large:latest"]
+        .ollama: [
+            "qwen2.5-coder:32b",
+            "deepseek-r1:14b",
+            "deepseek-r1:32b",
+            "llama3.3:70b",
+            "hermes3:8b",
+            "mistral:latest",
+            "starcoder2:latest"
+        ],
+        .local: ["qwen2.5-coder:32b", "deepseek-r1:14b", "deepseek-r1:32b", "llama3.3:70b"]
     ]
 
     public func modelsForActiveProvider() -> [String] {
@@ -178,18 +187,25 @@ public final class SettingsModel {
 
         var discovered: [String] = []
 
-        // LM Studio Dynamic Model Discovery via native v1 API
+        // LM Studio Dynamic Model Discovery via native v1 API / port 1234
         if activeProvider == .lmstudio {
-            let lmModels = (try? await LMStudioBridge.shared.listModels(baseURL: baseURL)) ?? []
-            for m in lmModels {
-                if !discovered.contains(m.id) {
-                    discovered.append(m.id)
+            let lmStatus = await LocalInferenceManager.shared.probeLMStudio(baseURL: baseURL)
+            for m in lmStatus.discoveredModels {
+                if !discovered.contains(m) {
+                    discovered.append(m)
+                }
+            }
+        } else if activeProvider == .ollama {
+            let ollamaStatus = await LocalInferenceManager.shared.probeOllama(baseURL: baseURL)
+            for m in ollamaStatus.discoveredModels {
+                if !discovered.contains(m) {
+                    discovered.append(m)
                 }
             }
         }
 
         // Query provider native API /models endpoint if API key is present or local
-        if !apiKey.isEmpty || activeProvider == .local || activeProvider == .lmstudio {
+        if !apiKey.isEmpty || activeProvider.isLocal {
             let provider = UniversalCloudProvider(
                 name: activeProvider.rawValue,
                 apiKey: apiKey,
@@ -433,7 +449,7 @@ public final class SettingsModel {
                     if let entry = json["openai"] as? [String: Any] {
                         self.apiKey = entry["key"] as? String ?? ""
                     }
-                case .lmstudio, .local:
+                case .lmstudio, .ollama, .local:
                     self.apiKey = ""
                 }
             }
@@ -534,8 +550,16 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
     case anthropic = "Anthropic"
     case deepseek = "DeepSeek"
     case openai = "OpenAI"
-    case lmstudio = "LM Studio (Local / Free)"
-    case local = "Custom / Local Gateway"
+    case lmstudio = "LM Studio (Local / Port 1234)"
+    case ollama = "Ollama (Local / Port 11434)"
+    case local = "Custom Local / vLLM"
+
+    public var isLocal: Bool {
+        switch self {
+        case .lmstudio, .ollama, .local: return true
+        default: return false
+        }
+    }
 
     public var icon: String {
         switch self {
@@ -549,7 +573,8 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
         case .deepseek: return "bolt.fill"
         case .openai: return "brain"
         case .lmstudio: return "laptopcomputer.and.arrow.down"
-        case .local: return "desktopcomputer"
+        case .ollama: return "cpu.fill"
+        case .local: return "server.rack"
         }
     }
 
@@ -565,7 +590,8 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
         case .deepseek: return "https://api.deepseek.com/v1"
         case .openai: return "https://api.openai.com/v1"
         case .lmstudio: return "http://localhost:1234/v1"
-        case .local: return "http://localhost:11434/v1"
+        case .ollama: return "http://localhost:11434/v1"
+        case .local: return "http://localhost:8000/v1"
         }
     }
 
@@ -581,7 +607,8 @@ public enum ProviderType: String, CaseIterable, Sendable, Codable {
         case .deepseek: return "https://deepseek.com"
         case .openai: return "https://openai.com"
         case .lmstudio: return "https://lmstudio.ai"
-        case .local: return "http://localhost:11434"
+        case .ollama: return "https://ollama.com"
+        case .local: return "http://localhost:8000"
         }
     }
 }
@@ -1339,14 +1366,75 @@ private struct LLMProviderSettingsPane: View {
                     .stroke(Color.adSuccess.opacity(0.3), lineWidth: 1)
             )
 
-            // Provider Selection Grid
+            // 1. On-Device Local Inference Engines (LM Studio vs Ollama)
             VStack(alignment: .leading, spacing: 10) {
-                Text("ACTIVE CLOUD PROVIDER")
+                HStack {
+                    Image(systemName: "bolt.horizontal.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.adOrange)
+                    Text("ON-DEVICE LOCAL INFERENCE (100% FREE · ZERO CLOUD TOKENS)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.adTextPrimary)
+                    Spacer()
+                    if model.activeProvider.isLocal {
+                        Text("ACTIVE: \(model.activeProvider.rawValue.uppercased())")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.adSuccess.opacity(0.2))
+                            .foregroundStyle(Color.adSuccess)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    // LM Studio Button
+                    localEngineButton(
+                        provider: .lmstudio,
+                        name: "LM Studio",
+                        port: "Port 1234",
+                        apiInfo: "Native v1 & /v1/responses",
+                        icon: "laptopcomputer.and.arrow.down",
+                        accentColor: .cyan
+                    )
+
+                    // Ollama Button
+                    localEngineButton(
+                        provider: .ollama,
+                        name: "Ollama",
+                        port: "Port 11434",
+                        apiInfo: "Native CLI & /api/tags",
+                        icon: "cpu.fill",
+                        accentColor: .green
+                    )
+
+                    // Custom Local Gateway Button
+                    localEngineButton(
+                        provider: .local,
+                        name: "Custom / vLLM",
+                        port: "Port 8000",
+                        apiInfo: "OpenAI Proxy",
+                        icon: "server.rack",
+                        accentColor: .purple
+                    )
+                }
+            }
+            .padding(12)
+            .background(Color.adNavy)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(model.activeProvider.isLocal ? Color.adOrange.opacity(0.6) : Color.adDivider, lineWidth: 1)
+            )
+
+            // 2. Cloud Frontier Providers
+            VStack(alignment: .leading, spacing: 10) {
+                Text("CLOUD & SUBSCRIPTION PROVIDERS")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(Color.adTextTertiary)
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(ProviderType.allCases, id: \.self) { provider in
+                    ForEach(ProviderType.allCases.filter { !$0.isLocal }, id: \.self) { provider in
                         let isSelected = model.activeProvider == provider
                         let hasKey = (model.providerKeys[provider.rawValue]?.isEmpty == false) || (isSelected && !model.apiKey.isEmpty)
 
@@ -1368,11 +1456,9 @@ private struct LLMProviderSettingsPane: View {
                                             .font(.system(size: 9, weight: .medium))
                                             .foregroundStyle(Color.adTextTertiary)
 
-                                        if provider != .local {
-                                            Text(hasKey ? "• ✓ Ready" : "• ○ Needs Key")
-                                                .font(.system(size: 9))
-                                                .foregroundStyle(hasKey ? Color.adSuccess : Color.adWarning)
-                                        }
+                                        Text(hasKey ? "• ✓ Ready" : "• ○ Needs Key")
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(hasKey ? Color.adSuccess : Color.adWarning)
                                     }
                                 }
 
@@ -1573,10 +1659,67 @@ private struct LLMProviderSettingsPane: View {
         case .openrouter:
             return "[Aggregator Key]"
         case .lmstudio:
-            return "[On-Device / 100% Free]"
+            return "[On-Device / Port 1234]"
+        case .ollama:
+            return "[On-Device / Port 11434]"
         case .local:
-            return "[Local Endpoint]"
+            return "[Custom Local Gateway]"
         }
+    }
+
+    private func localEngineButton(
+        provider: ProviderType,
+        name: String,
+        port: String,
+        apiInfo: String,
+        icon: String,
+        accentColor: Color
+    ) -> some View {
+        let isSelected = model.activeProvider == provider
+
+        return Button {
+            model.activeProvider = provider
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(isSelected ? accentColor : Color.adTextSecondary)
+
+                    Text(name)
+                        .font(.system(size: 12, weight: isSelected ? .bold : .semibold))
+                        .foregroundStyle(isSelected ? Color.adTextPrimary : Color.adTextSecondary)
+
+                    Spacer()
+
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(accentColor)
+                    }
+                }
+
+                Text(port)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(accentColor)
+
+                Text(apiInfo)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.adTextTertiary)
+                    .lineLimit(1)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? Color.adElevated : Color.adCard.opacity(0.6))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(isSelected ? accentColor : Color.adDivider, lineWidth: isSelected ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private func testConnection() {

@@ -1,12 +1,12 @@
 // LMStudioBridgeTests.swift
-// Adventurers Harness — Unit Tests for Native LM Studio REST API Bridge & On-Device Routing
+// Adventurers Harness — Unit Tests for Native LM Studio REST API Bridge & Local Inference Manager
 
 import Testing
 import Foundation
 @testable import AdventurersCore
 import LLMProviders
 
-@Suite("LM Studio REST API Bridge & Local Model Registry Suite")
+@Suite("LM Studio & Ollama Local Inference Manager Suite")
 struct LMStudioBridgeTests {
 
     @Test("LM Studio Model Info accurately stores model architecture and context metadata")
@@ -65,7 +65,25 @@ struct LMStudioBridgeTests {
         }
     }
 
-    @Test("UniversalCloudProvider initializes cleanly with empty API key for local LM Studio inference")
+    @Test("Local Inference Manager distinguishes LM Studio vs Ollama ports and endpoints")
+    func testLocalInferenceEngineDefaults() {
+        #expect(LocalEngineType.lmstudio.defaultPort == 1234)
+        #expect(LocalEngineType.ollama.defaultPort == 11434)
+        #expect(LocalEngineType.lmstudio.defaultBaseURL == "http://localhost:1234/v1")
+        #expect(LocalEngineType.ollama.defaultBaseURL == "http://localhost:11434/v1")
+    }
+
+    @Test("Local Inference Manager probes offline ports safely without exceptions")
+    func testLocalInferenceProbes() async {
+        let manager = LocalInferenceManager.shared
+        let lmStatus = await manager.probeLMStudio(baseURL: "http://127.0.0.1:59998")
+        let ollamaStatus = await manager.probeOllama(baseURL: "http://127.0.0.1:59997")
+
+        #expect(lmStatus.isOnline == false)
+        #expect(ollamaStatus.isOnline == false)
+    }
+
+    @Test("UniversalCloudProvider initializes cleanly with empty API key for local inference")
     func testLocalLMStudioProviderInit() {
         let provider = UniversalCloudProvider(
             name: "LM Studio",

@@ -132,6 +132,11 @@ public struct ThreadView: View {
                 threadVM.selectedModel = current
             }
         }
+        .sheet(item: $threadVM.pendingPermissionRequest) { request in
+            PermissionDialogView(request: request) { decision in
+                threadVM.resolvePendingPermission(decision)
+            }
+        }
     }
 }
 

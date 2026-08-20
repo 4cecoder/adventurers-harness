@@ -35,6 +35,11 @@ public final class ThreadViewModel: ObservableObject {
     public let meteringState = ThreadMeteringState()
     public var activeGenerationTask: Task<Void, Never>? = nil
 
+    /// Drives the permission sheet in `ThreadView`. Non-nil while a tool call is awaiting the
+    /// user's Allow/Deny decision.
+    @Published var pendingPermissionRequest: PermissionRequest?
+    private var pendingPermissionContinuation: CheckedContinuation<PermissionDecision, Never>?
+
     public init(threadID: UUID? = nil, workingDirectory: String? = nil) {
         self.threadID = threadID
         if let dir = workingDirectory, !dir.isEmpty && dir != "/" {
@@ -387,11 +392,7 @@ public final class ThreadViewModel: ObservableObject {
                 self.appendMessage(initialMsg)
 
                 let anyArgs = args.mapValues { AnyCodable($0) }
-                let toolExecResult = await self.toolExecutor.execute(
-                    name: toolName,
-                    arguments: anyArgs,
-                    workingDirectory: self.workingDirectory
-                )
+                let toolExecResult = await self.executeNativeTool(name: toolName, arguments: anyArgs)
 
                 let cleanOutput = toolName == "run_command" || toolName == "bash" 
                     ? NeedleOutputCompactor.compactBuildLog(toolExecResult.output)
@@ -757,12 +758,86 @@ public final class ThreadViewModel: ObservableObject {
     private let toolParser = ThreadToolCallParser()
     private let gateCertifier = ThreadGateCertifier()
 
+    /// Gatekeeps every native tool call — including the Cactus Needle 2 fast-path — behind a
+    /// user-facing approval prompt. Nothing should call `toolExecutor.execute` directly; route
+    /// through `executeNativeTool` instead so approval can't be bypassed.
+    private lazy var toolApprovalManager: ToolApprovalManager = {
+        let manager = ToolApprovalManager(defaultTimeoutSeconds: 180)
+        Task { await manager.setApprovalHandler { [weak self] request in
+            guard let self else { return .denied(reason: "No active thread to confirm with") }
+            return await self.presentApprovalDialog(for: request)
+        }}
+        return manager
+    }()
+
     private func extractToolCalls(from text: String) -> [ThreadToolCallParser.ToolInvocation] {
         toolParser.extractToolCalls(from: text)
     }
 
     private func executeNativeTool(name: String, arguments: [String: AnyCodable]) async -> ToolResult {
-        await toolExecutor.execute(name: name, arguments: arguments, workingDirectory: self.workingDirectory)
+        let commandArg = arguments["command"]?.stringValue
+            ?? arguments["path"]?.stringValue
+            ?? arguments.description
+        let risk = riskLevel(for: name, commandArg: commandArg)
+
+        let decision = await toolApprovalManager.evaluateOrRequestApproval(
+            toolName: name,
+            riskLevel: risk,
+            command: commandArg,
+            sessionID: threadID?.uuidString ?? "default"
+        )
+        guard decision.isApproved else {
+            return ToolResult(output: "", error: "Tool '\(name)' was not approved: \(decision.reason ?? "denied by user")")
+        }
+
+        return await toolExecutor.execute(name: name, arguments: arguments, workingDirectory: self.workingDirectory)
+    }
+
+    private func riskLevel(for toolName: String, commandArg: String) -> RiskLevel {
+        switch toolName {
+        case "bash", "run_command", "shell":
+            return DangerousCommandDetector.shared.detectDangerousCommand(commandArg)?.risk ?? .execute
+        case "write_file", "create_file", "edit_file", "patch_file":
+            return .write
+        default:
+            return .readOnly
+        }
+    }
+
+    /// Shows the permission sheet and suspends until the user responds. Runs on the main actor
+    /// since it drives `@Published` UI state.
+    @MainActor
+    private func presentApprovalDialog(for request: ToolApprovalRequest) async -> ToolApprovalDecision {
+        let permissionRequest = PermissionRequest(
+            toolName: request.toolName,
+            riskLevel: request.riskLevel,
+            command: request.command,
+            agentID: request.sessionID,
+            timestamp: request.timestamp
+        )
+
+        let decision: PermissionDecision = await withCheckedContinuation { continuation in
+            self.pendingPermissionContinuation = continuation
+            self.pendingPermissionRequest = permissionRequest
+        }
+        self.pendingPermissionRequest = nil
+
+        switch decision {
+        case .allowOnce:
+            return .approved
+        case .allowForSession:
+            await toolApprovalManager.setPolicy(.askOncePerSession, for: request.toolName)
+            await toolApprovalManager.grantSessionApproval(for: request.toolName, sessionID: request.sessionID)
+            return .approved
+        case .deny:
+            return .denied(reason: "User denied the tool request")
+        }
+    }
+
+    /// Called by `ThreadView` when the user taps Allow/Deny on `pendingPermissionRequest`.
+    func resolvePendingPermission(_ decision: PermissionDecision) {
+        pendingPermissionContinuation?.resume(returning: decision)
+        pendingPermissionContinuation = nil
     }
 
     @discardableResult
