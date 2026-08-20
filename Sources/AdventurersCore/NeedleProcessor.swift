@@ -211,12 +211,10 @@ public struct NeedleOutputCompactor: Sendable {
         guard lines.count > 100 else { return raw }
 
         var compacted: [String] = []
-        var currentFile = ""
         var modifiedLines = 0
 
         for line in lines {
             if line.hasPrefix("diff --git") {
-                currentFile = line
                 compacted.append("\n📁 " + line)
             } else if line.hasPrefix("@@") {
                 compacted.append(line)
