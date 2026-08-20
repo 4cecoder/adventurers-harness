@@ -6,7 +6,7 @@
       <stop offset="50%" stop-color="#0B0B0E"/>
       <stop offset="100%" stop-color="#050507"/>
     </linearGradient>
-    
+
     <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
       <stop offset="0%" stop-color="#FF6B35" stop-opacity="0.45"/>
       <stop offset="40%" stop-color="#FF9F0A" stop-opacity="0.2"/>
@@ -92,10 +92,10 @@
 
   <!-- Central Adventurer Shield -->
   <g filter="url(#appShadow)">
-    <path d="M 512 240 
-             C 630 240 720 280 720 380 
-             C 720 590 580 710 512 760 
-             C 444 710 304 590 304 380 
+    <path d="M 512 240
+             C 630 240 720 280 720 380
+             C 720 590 580 710 512 760
+             C 444 710 304 590 304 380
              C 304 280 394 240 512 240 Z"
           fill="url(#shieldGrad)"
           stroke="url(#borderGrad)"
@@ -103,10 +103,10 @@
   </g>
 
   <!-- Inner Shield Glow Inlay -->
-  <path d="M 512 270 
-           C 610 270 686 304 686 390 
-           C 686 565 568 668 512 710 
-           C 456 668 338 565 338 390 
+  <path d="M 512 270
+           C 610 270 686 304 686 390
+           C 686 565 568 668 512 710
+           C 456 668 338 565 338 390
            C 338 304 414 270 512 270 Z"
         fill="none"
         stroke="url(#gateRingCyan)"
@@ -119,7 +119,7 @@
     <polygon points="512,290 546,490 512,530 478,490" fill="url(#bladeGrad)"/>
     <!-- Specular Highlight Line -->
     <line x1="512" y1="290" x2="512" y2="530" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
-    
+
     <!-- Lower Blade (South Anchor) -->
     <polygon points="512,710 540,534 512,500 484,534" fill="#30D158" opacity="0.9"/>
     <line x1="512" y1="500" x2="512" y2="710" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity="0.6"/>

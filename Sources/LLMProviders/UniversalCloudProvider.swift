@@ -223,7 +223,7 @@ public struct UniversalCloudProvider: LLMProvider, Sendable {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        
+
         // Handle both standard API keys and OAuth Bearer tokens
         if apiKey.hasPrefix("sk-ant-oat") || apiKey.contains("Bearer ") {
             let token = apiKey.replacingOccurrences(of: "Bearer ", with: "")
@@ -231,7 +231,7 @@ public struct UniversalCloudProvider: LLMProvider, Sendable {
         } else {
             request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
         }
-        
+
         request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -244,7 +244,7 @@ public struct UniversalCloudProvider: LLMProvider, Sendable {
             "max_tokens": config.maxTokens ?? 4096,
             "temperature": config.temperature ?? 0.2,
         ]
-        
+
         if !systemPrompt.isEmpty {
             body["system"] = systemPrompt
         }
@@ -303,14 +303,14 @@ public struct UniversalCloudProvider: LLMProvider, Sendable {
 
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
-                
+
                 if apiKey.hasPrefix("sk-ant-oat") || apiKey.contains("Bearer ") {
                     let token = apiKey.replacingOccurrences(of: "Bearer ", with: "")
                     request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                 } else {
                     request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
                 }
-                
+
                 request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
                 request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -323,7 +323,7 @@ public struct UniversalCloudProvider: LLMProvider, Sendable {
                     "max_tokens": config.maxTokens ?? 4096,
                     "stream": true,
                 ]
-                
+
                 if !systemPrompt.isEmpty {
                     body["system"] = systemPrompt
                 }

@@ -92,7 +92,7 @@ struct CrashReporterTests {
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let manager = CrashReporterManager(crashDirectoryOverride: tempDir, installHandlers: false)
-        
+
         enum TestError: Error { case connectionFailed }
         let nonFatal = manager.recordNonFatal(error: TestError.connectionFailed, context: "Connecting to LM Studio")
 

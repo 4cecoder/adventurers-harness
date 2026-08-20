@@ -55,11 +55,11 @@ public struct NativeGlassTextView: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 4, height: 6)
 
         scrollView.documentView = textView
-        
+
         DispatchQueue.main.async {
             textView.window?.makeFirstResponder(textView)
         }
-        
+
         return scrollView
     }
 

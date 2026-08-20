@@ -70,6 +70,24 @@ jobs:
           chmod +x scripts/generate_icon.sh
           ./scripts/generate_icon.sh
 
+      - name: Determine Release Channel
+        run: |
+          REF="${{ github.ref }}"
+          if [[ "$REF" == refs/tags/v* ]]; then
+            TAG="${REF#refs/tags/}"
+            if [[ "$TAG" == *-beta* ]]; then
+              CHANNEL="beta"
+            else
+              CHANNEL="stable"
+            fi
+          elif [[ "$REF" == "refs/heads/master" || "$REF" == "refs/heads/main" ]]; then
+            CHANNEL="alpha"
+          else
+            CHANNEL="none" # PRs and other refs never publish
+          fi
+          echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
+          echo "📡 Release channel: $CHANNEL"
+
       - name: Package macOS App, DMG & ZIP
         env:
           SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
@@ -92,15 +110,23 @@ jobs:
           cat dist/*.sha256
 
       - name: Generate Signed Sparkle Appcast
-        if: ${{ secrets.SPARKLE_PRIVATE_KEY != '' }}
+        if: ${{ env.CHANNEL != 'none' && secrets.SPARKLE_PRIVATE_KEY != '' }}
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
+          # All three channels share ONE appcast feed (SUFeedURL always points at the `latest`
+          # release's appcast.xml) — Sparkle tells channels apart via a <sparkle:channel> tag per
+          # item, not via separate feeds. Fetch the existing feed first so new entries accumulate
+          # instead of each build wiping out the others' history.
           echo "📡 Fetching existing appcast.xml (if any) so version/delta history accumulates..."
           curl -sL -f -o dist/appcast.xml "https://github.com/4cecoder/adventurers-harness/releases/download/latest/appcast.xml" || rm -f dist/appcast.xml
           chmod +x scripts/sparkle_tools.sh
-          echo "🔏 Generating & signing appcast.xml..."
-          echo "$SPARKLE_PRIVATE_KEY" | ./scripts/sparkle_tools.sh generate_appcast --ed-key-file - dist/
+          echo "🔏 Generating & signing appcast.xml for channel '${CHANNEL}'..."
+          if [ "${CHANNEL}" = "stable" ]; then
+            echo "$SPARKLE_PRIVATE_KEY" | ./scripts/sparkle_tools.sh generate_appcast --ed-key-file - dist/
+          else
+            echo "$SPARKLE_PRIVATE_KEY" | ./scripts/sparkle_tools.sh generate_appcast --ed-key-file - --channel "${CHANNEL}" dist/
+          fi
           ls -la dist/appcast.xml
 
       - name: Upload Build Artifacts
@@ -118,7 +144,7 @@ jobs:
           retention-days: 14
 
       - name: Upload Appcast Artifact
-        if: ${{ secrets.SPARKLE_PRIVATE_KEY != '' }}
+        if: ${{ env.CHANNEL != 'none' && secrets.SPARKLE_PRIVATE_KEY != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: Adventurers-appcast
@@ -130,9 +156,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: Adventurers Harness ${{ github.ref_name }} (macOS arm64)
+          name: Adventurers Harness ${{ github.ref_name }} (macOS arm64)${{ env.CHANNEL == 'beta' && ' [Beta]' || '' }}
           draft: false
-          prerelease: false
+          prerelease: ${{ env.CHANNEL == 'beta' }}
           files: |
             dist/Adventurers-macOS-arm64.dmg
             dist/Adventurers-macOS-arm64.zip
@@ -140,11 +166,11 @@ jobs:
             dist/Adventurers-macOS-arm64.dmg.sha256
             dist/Adventurers-macOS-arm64.zip.sha256
             dist/Adventurers-macOS-arm64.tar.gz.sha256
-            dist/appcast.xml
           generate_release_notes: true
 
+      # Homebrew tracks stable only — beta/alpha builds never touch the formula/cask.
       - name: Sync Homebrew Formula & Cask
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.CHANNEL == 'stable'
         run: |
           set -euo pipefail
           DMG_SHA="$(cut -d' ' -f1 dist/Adventurers-macOS-arm64.dmg.sha256)"
@@ -168,15 +194,22 @@ jobs:
             git push origin master
           fi
 
-      - name: Publish Master Rolling Prerelease
-        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+      # The `latest` release's assets are the ONE canonical location for appcast.xml — the app's
+      # SUFeedURL always points here regardless of which channel a build belongs to, since Sparkle
+      # tells channels apart via a per-item <sparkle:channel> tag in a single shared feed, not via
+      # separate feed URLs. This step keeps that shared appcast (and a copy of the latest binaries)
+      # in sync on every publishable build: master pushes (alpha), beta tags, and stable tags alike.
+      # Only `make_latest` is reserved for real stable releases, so GitHub's own "Latest" badge
+      # doesn't point at an alpha/beta build.
+      - name: Sync Shared Appcast & Latest-Build Assets
+        if: env.CHANNEL != 'none'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Adventurers Harness Latest (macOS Apple Silicon)
           draft: false
           prerelease: true
-          make_latest: true
+          make_latest: ${{ env.CHANNEL == 'stable' }}
           files: |
             dist/Adventurers-macOS-arm64.dmg
             dist/Adventurers-macOS-arm64.zip
@@ -187,14 +220,15 @@ jobs:
             dist/appcast.xml
           body: |
             ### Automated Continuous Build (macOS ARM64)
-            Built from commit `${{ github.sha }}` on `master`.
+            Built from commit `${{ github.sha }}` on the **${{ env.CHANNEL }}** channel.
 
-            #### Download Links
-            - **[Adventurers-macOS-arm64.dmg](https://github.com/4cecoder/adventurers-harness/releases/download/latest/Adventurers-macOS-arm64.dmg)** (Disk Image Installer)
-            - **[Adventurers-macOS-arm64.zip](https://github.com/4cecoder/adventurers-harness/releases/download/latest/Adventurers-macOS-arm64.zip)** (Portable App Bundle)
-            - **[Adventurers-macOS-arm64.tar.gz](https://github.com/4cecoder/adventurers-harness/releases/download/latest/Adventurers-macOS-arm64.tar.gz)** (Homebrew Tarball)
-            
-            #### Homebrew Installation
+            This release's assets are always the most recent build from whichever channel last ran
+            CI — switch channels in Settings → General → Update Channel to control which builds
+            `appcast.xml` here actually offers you. `Adventurers-macOS-arm64.dmg` below is always the
+            latest **alpha** build; for a specific stable or beta version see its own versioned
+            release instead.
+
+            #### Homebrew Installation (stable only)
             ```bash
             brew tap 4cecoder/adventurers https://github.com/4cecoder/adventurers-harness
             brew install adventurers

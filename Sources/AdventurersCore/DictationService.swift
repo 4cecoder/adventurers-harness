@@ -283,7 +283,7 @@ public final class DictationManager: NSObject, ObservableObject {
 
             let node = engine.inputNode
             let nativeFormat = node.outputFormat(forBus: 0)
-            
+
             // Validate audio format sample rate and channel count
             let sampleRate = nativeFormat.sampleRate
             let channels = nativeFormat.channelCount

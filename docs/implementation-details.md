@@ -75,7 +75,7 @@ This prevents users from accidentally approving `bash -c 'rm -rf /'` as a reusab
 The guardian has **two independent circuit breakers**:
 
 ```rust
-// Cyber models (more aggressive): 
+// Cyber models (more aggressive):
 MAX_CONSECUTIVE_CYBER_GUARDIAN_DENIALS_PER_TURN = 1
 MAX_RECENT_CYBER_AUTO_REVIEW_DENIALS_PER_TURN = 1
 
@@ -278,7 +278,7 @@ fn macos::wrap_command(command, permissions) {
     - system-socket (AF_UNIX)
     - network-bind (local unix-socket)
     - network-outbound (remote unix-socket)
-    
+
     // Deny everything else (deny default)
     // Read-only paths: explicit subpath rules
 }

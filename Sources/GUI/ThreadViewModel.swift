@@ -394,7 +394,7 @@ public final class ThreadViewModel: ObservableObject {
                 let anyArgs = args.mapValues { AnyCodable($0) }
                 let toolExecResult = await self.executeNativeTool(name: toolName, arguments: anyArgs)
 
-                let cleanOutput = toolName == "run_command" || toolName == "bash" 
+                let cleanOutput = toolName == "run_command" || toolName == "bash"
                     ? NeedleOutputCompactor.compactBuildLog(toolExecResult.output)
                     : toolExecResult.output
 

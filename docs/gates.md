@@ -86,4 +86,3 @@ let contract = TaskContract(
     ]
 )
 ```
-

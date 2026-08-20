@@ -36,7 +36,7 @@ let sizes: [(name: String, size: Int)] = [
 for item in sizes {
     let destURL = iconsetDir.appendingPathComponent(item.name)
     let targetRect = NSRect(x: 0, y: 0, width: item.size, height: item.size)
-    
+
     let rep = NSBitmapImageRep(
         bitmapDataPlanes: nil,
         pixelsWide: item.size,
@@ -49,16 +49,16 @@ for item in sizes {
         bytesPerRow: 0,
         bitsPerPixel: 0
     )!
-    
+
     NSGraphicsContext.saveGraphicsState()
     let ctx = NSGraphicsContext(bitmapImageRep: rep)
     NSGraphicsContext.current = ctx
     ctx?.imageInterpolation = .high
-    
+
     svgImage.draw(in: targetRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-    
+
     NSGraphicsContext.restoreGraphicsState()
-    
+
     if let pngData = rep.representation(using: .png, properties: [:]) {
         try? pngData.write(to: destURL)
     }

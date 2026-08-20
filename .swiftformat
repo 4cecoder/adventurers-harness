@@ -1,0 +1,7 @@
+--swiftversion 6.0
+
+# Match this codebase's existing conventions rather than SwiftFormat's opinionated defaults —
+# calibrated by running `swiftformat --lint` against the whole tree before adding this file.
+--disable redundantSelf,blankLinesBetweenScopes,wrapMultilineStatementBraces,elseOnSameLine,hoistPatternLet,spaceAroundOperators
+
+--exclude .build,dist,.sparkle-tools,research,ida-workspace,assets/AppIcon.iconset

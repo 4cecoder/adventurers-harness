@@ -71,7 +71,7 @@ struct StdinAndJSONRPCTests {
         combined.append(frame2)
 
         let framer = JSONRPCFramer()
-        
+
         // Feed in 10-byte fragments
         var received: [Data] = []
         let chunkSize = 10

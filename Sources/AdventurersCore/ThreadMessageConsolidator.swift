@@ -36,7 +36,7 @@ public struct ThreadMessageConsolidator: Sendable {
                         thinkingParts.append(think)
                     }
                     let trimmed = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
-                    
+
                     // Filter out transient intermediate noise phrases
                     let isTransientNoise = trimmed.isEmpty
                         || trimmed.hasPrefix("Executed ")
@@ -44,7 +44,7 @@ public struct ThreadMessageConsolidator: Sendable {
                         || trimmed.hasPrefix("Running ")
                         || trimmed.hasPrefix("<tool_call>")
                         || trimmed.hasPrefix("Tool '")
-                    
+
                     if !isTransientNoise {
                         contentParts.append(trimmed)
                     }

@@ -88,7 +88,7 @@ struct DiffAndCompactorTests {
     @Test("Trajectory Compressor reduces token volume of long horizon outputs")
     func trajectoryCompressorRatio() async {
         let compressor = TrajectoryCompressor(config: TrajectoryCompressionConfig(targetMaxTokens: 50, protectedHeadTurns: 1, protectedTailTurns: 1))
-        
+
         var turns: [TrajectoryTurn] = [
             TrajectoryTurn(role: "user", content: "Initial prompt"),
         ]

@@ -49,7 +49,7 @@ public actor DarwinSandbox {
         case .workspaceWrite(let root, let extraRoots):
             var writableSubpaths = [root.path]
             writableSubpaths.append(contentsOf: extraRoots.map(\.path))
-            
+
             let allowedWrites = writableSubpaths.map { path in
                 "(allow file-write* (subpath \"\(path)\"))"
             }.joined(separator: "\n")

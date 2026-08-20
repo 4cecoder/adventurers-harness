@@ -98,7 +98,7 @@ Security cannot rely on model alignment. Agent harnesses must enforce host opera
 
 ## 6. Trajectory Token Compression & Memory Anchoring
 
-As multi-turn conversations grow, context windows become saturated, increasing latency and cost. 
+As multi-turn conversations grow, context windows become saturated, increasing latency and cost.
 
 ### Preservation Rules
 1. **System Prompt & Task Contract**: Always preserved intact (Anchor Priority 100).

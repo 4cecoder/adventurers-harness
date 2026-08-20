@@ -295,11 +295,11 @@ public final class MetaHarnessRunner: Sendable {
         let errorPipe = Pipe()
 
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        
+
         var env = ProcessInfo.processInfo.environment
         env["TERM"] = "xterm-256color"
         env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
-        
+
         // Inject dedicated Meta-Harness API Key if enabled and configured
         if profile.authMode != .nativeSubscription && !profile.apiKey.isEmpty {
             env[profile.type.defaultEnvKeyName] = profile.apiKey
@@ -320,7 +320,7 @@ public final class MetaHarnessRunner: Sendable {
 
         let escapedPrompt = prompt.replacingOccurrences(of: "'", with: "'\\''")
         let customArgsJoined = profile.customArgs.joined(separator: " ")
-        
+
         let commandLine: String
         if !customArgsJoined.isEmpty {
             commandLine = "\(profile.binaryPath) \(customArgsJoined) '\(escapedPrompt)'"

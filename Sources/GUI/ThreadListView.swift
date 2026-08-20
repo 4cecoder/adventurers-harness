@@ -670,4 +670,3 @@ struct ThreadListView: View {
 }
 
 // MARK: - Preview
-

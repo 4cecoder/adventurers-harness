@@ -966,7 +966,3 @@ struct GateProgressView: View {
 }
 
 // MARK: - Preview
-
-
-
-

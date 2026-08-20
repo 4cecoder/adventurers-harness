@@ -1,0 +1,52 @@
+# Pre-commit hooks for Adventurers Harness (Swift/SwiftPM macOS app).
+#
+# Deliberately does NOT run SwiftLint/SwiftFormat as blocking commit-time checks: this codebase
+# predates this config and doesn't match either tool's defaults (94+/97 files would need
+# reformatting), and SwiftLint specifically requires a full Xcode.app install to run at all (it
+# links against SourceKit), which not every contributor's machine has — only Command Line Tools
+# are guaranteed. A `.swiftformat` config is included for anyone who wants to run it manually;
+# adopting it repo-wide as an enforced hook is a deliberate future decision, not bundled here.
+#
+# Install with: pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: mixed-line-ending
+      - id: check-yaml
+      - id: detect-private-key
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.18.0
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+  # Correctness gate on push rather than every commit — a full `swift build` takes tens of
+  # seconds, too slow to run on every commit, but pushing broken code is worse than a slower push.
+  - repo: local
+    hooks:
+      - id: swift-build
+        name: swift build
+        entry: swift build
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: swift-test
+        name: swift test (AdventurersCoreTests)
+        entry: swift test --filter AdventurersCoreTests
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

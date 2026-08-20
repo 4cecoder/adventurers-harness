@@ -77,7 +77,7 @@ public struct SessionCheckpoint: Codable, Identifiable, Sendable {
 
 public actor CheckpointPersistence {
     public static let shared = CheckpointPersistence()
-    
+
     public func saveCheckpoint(_ checkpoint: SessionCheckpoint) throws {
         let dir = checkpointDirectory(for: checkpoint.threadID)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -85,7 +85,7 @@ public actor CheckpointPersistence {
         let data = try JSONEncoder().encode(checkpoint)
         try data.write(to: fileURL, options: .atomic)
     }
-    
+
     public func loadCheckpoints(for threadID: UUID) -> [SessionCheckpoint] {
         let dir = checkpointDirectory(for: threadID)
         guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return [] }
@@ -106,21 +106,21 @@ Parallel subagents execute in isolated temporary git worktrees branched from the
 ```swift
 public actor WorktreeManager {
     public static let shared = WorktreeManager()
-    
+
     public func createWorktreeLease(repoPath: String, subagentID: String) async throws -> String {
         let worktreePath = "/tmp/adventurers-worktrees/\(subagentID)"
         let branchName = "subagent/\(subagentID)"
-        
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
         process.arguments = ["worktree", "add", "-b", branchName, worktreePath]
         try process.run()
         process.waitUntilExit()
-        
+
         return worktreePath
     }
-    
+
     public func removeWorktreeLease(repoPath: String, subagentID: String) async throws {
         let worktreePath = "/tmp/adventurers-worktrees/\(subagentID)"
         let process = Process()
@@ -215,6 +215,6 @@ All 10 capabilities are accompanied by dedicated Swift 6 unit test suites:
 
 ---
 
-*Last Updated: 2026-08-19*  
-*Architecture Target: Adventurers Harness v1.0.0 (macOS Apple Silicon arm64)*  
+*Last Updated: 2026-08-19*
+*Architecture Target: Adventurers Harness v1.0.0 (macOS Apple Silicon arm64)*
 *Source: `MUSE_BINARY_ANALYSIS.md` + `r2_muse_analysis/`*

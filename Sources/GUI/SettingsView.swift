@@ -45,6 +45,9 @@ public final class SettingsModel {
     public var autoCompact: Bool = true
     public var autoCompactThreshold: Double = 80.0
     public var checkUpdatesOnLaunch: Bool = true
+    public var updateChannel: UpdateChannel = .stable {
+        didSet { AppUpdateManager.shared.updateChannel = updateChannel }
+    }
 
     // MARK: Speech & Dictation (Talkies Pipeline)
     public var enableDictation: Bool = true {
@@ -348,10 +351,10 @@ public final class SettingsModel {
     public func autoImportStoredKeys() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let authURL = home.appendingPathComponent(".local/share/opencode/auth.json")
-        
+
         if let data = try? Data(contentsOf: authURL),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            
+
             // 1. Populate all known provider credentials into cache
             if let opencodeGo = (json["opencode-go"] ?? json["opencode"]) as? [String: Any],
                let key = opencodeGo["key"] as? String, !key.isEmpty {
@@ -475,7 +478,9 @@ public final class SettingsModel {
             enableDictation: enableDictation,
             dictationAutoPunctuation: dictationAutoPunctuation,
             dictationSilenceTimeoutSeconds: dictationSilenceTimeoutSeconds,
-            dictationLanguage: dictationLanguage
+            dictationLanguage: dictationLanguage,
+            checkUpdatesOnLaunch: checkUpdatesOnLaunch,
+            updateChannel: updateChannel
         )
         if let data = try? JSONEncoder().encode(persisted) {
             try? data.write(to: settingsFileURL)
@@ -517,6 +522,12 @@ public final class SettingsModel {
         if let lang = persisted.dictationLanguage {
             self.dictationLanguage = lang
         }
+        if let checkUpdates = persisted.checkUpdatesOnLaunch {
+            self.checkUpdatesOnLaunch = checkUpdates
+        }
+        if let channel = persisted.updateChannel {
+            self.updateChannel = channel
+        }
         return true
     }
 }
@@ -536,6 +547,8 @@ public struct PersistedSettings: Codable, Sendable {
     var dictationAutoPunctuation: Bool?
     var dictationSilenceTimeoutSeconds: Double?
     var dictationLanguage: String?
+    var checkUpdatesOnLaunch: Bool?
+    var updateChannel: UpdateChannel?
 }
 
 // MARK: - Provider Types
@@ -1829,6 +1842,29 @@ private struct GeneralSettingsPane: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!AppUpdateManager.shared.canCheckForUpdates)
+                }
+                .padding(14)
+                .background(Color.adCard)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Update Channel")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.adTextSecondary)
+                        Spacer()
+                        Picker("", selection: $model.updateChannel) {
+                            ForEach(UpdateChannel.allCases, id: \.self) { channel in
+                                Text(channel.displayName).tag(channel)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 200)
+                    }
+                    Text(model.updateChannel.explanation)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.adTextTertiary)
                 }
                 .padding(14)
                 .background(Color.adCard)

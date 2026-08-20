@@ -17,6 +17,46 @@
 import SwiftUI
 import AppKit
 import Sparkle
+import os.lock
+
+// MARK: - Update Channel
+
+/// Release train the user opts into. Maps to `<sparkle:channel>` tags in appcast.xml: CI tags
+/// alpha builds (every push to master) and beta builds (`vX.Y.Z-beta.N` tags) with those channel
+/// names; plain `vX.Y.Z` stable tags carry no channel tag. Sparkle always includes the default
+/// (stable) channel regardless of `allowedChannels`, so each tier is additive — picking Alpha
+/// means "stable + beta + alpha", not "alpha only".
+public enum UpdateChannel: String, CaseIterable, Codable, Sendable {
+    case stable
+    case beta
+    case alpha
+
+    public var displayName: String {
+        switch self {
+        case .stable: return "Stable"
+        case .beta: return "Beta"
+        case .alpha: return "Alpha"
+        }
+    }
+
+    public var explanation: String {
+        switch self {
+        case .stable: return "Tagged releases only. Recommended for most people."
+        case .beta: return "Stable releases plus beta pre-releases."
+        case .alpha: return "Every build — stable, beta, and the latest master build. Most likely to break."
+        }
+    }
+
+    /// Additional channels Sparkle should also look for updates in, beyond the always-included
+    /// default/stable channel.
+    var allowedChannels: Set<String> {
+        switch self {
+        case .stable: return []
+        case .beta: return ["beta"]
+        case .alpha: return ["alpha", "beta"]
+        }
+    }
+}
 
 // MARK: - Update Status (mirrors Sparkle's delegate callbacks for display purposes only)
 
@@ -42,6 +82,19 @@ public final class AppUpdateManager: NSObject, SPUUpdaterDelegate {
 
     public var status: UpdateStatus = .idle
     public private(set) var canCheckForUpdates: Bool = false
+
+    /// Which release train to look for updates in. Persisted by `SettingsModel`; assign this
+    /// (rather than mutating it via Sparkle directly) whenever the user changes it in Settings.
+    ///
+    /// Backed by a lock instead of a plain `@Observable` stored property because Sparkle's
+    /// `allowedChannels(for:)` delegate callback must return synchronously and isn't guaranteed
+    /// to run on the main actor — there's no `await`-based hop available here the way the other
+    /// (async) delegate methods below use.
+    public nonisolated var updateChannel: UpdateChannel {
+        get { updateChannelStorage.withLock { $0 } }
+        set { updateChannelStorage.withLock { $0 = newValue } }
+    }
+    private let updateChannelStorage = OSAllocatedUnfairLock<UpdateChannel>(initialState: .stable)
 
     // `SPUUpdaterDelegate` can only be supplied at construction (there's no settable property on
     // `SPUUpdater` afterward), but building the controller needs `self` as that delegate — which
@@ -98,6 +151,10 @@ public final class AppUpdateManager: NSObject, SPUUpdaterDelegate {
 
     public nonisolated func feedURLString(for updater: SPUUpdater) -> String? {
         nil // Use the SUFeedURL configured in Info.plist.
+    }
+
+    public nonisolated func allowedChannels(for updater: SPUUpdater) -> Set<String> {
+        updateChannel.allowedChannels
     }
 
     public nonisolated func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {

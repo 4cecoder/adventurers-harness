@@ -1,6 +1,6 @@
 # Adventurers Harness — Architectural Roadmap & Microtasks
 
-> **North Star**: Build the most dependable, deterministic, and high-velocity macOS-native coding agent harness on Apple Silicon.  
+> **North Star**: Build the most dependable, deterministic, and high-velocity macOS-native coding agent harness on Apple Silicon.
 > **Core Principle**: *The model proposes. The harness certifies.*
 
 ---

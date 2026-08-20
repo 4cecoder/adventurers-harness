@@ -58,13 +58,37 @@ install them.
   accumulates across builds instead of resetting every time.
 - Runs `scripts/sparkle_tools.sh generate_appcast`, feeding `SPARKLE_PRIVATE_KEY` in over stdin
   (`--ed-key-file -`) — the key is never written to disk on the runner.
-- Uploads the resulting signed `appcast.xml` alongside the `.dmg`/`.zip`/`.tar.gz` to both the
-  versioned release (`vX.Y.Z` tags) and the rolling `latest` prerelease.
+- Uploads the resulting signed `appcast.xml` — always to the `latest` release's assets, since
+  that's the one fixed URL the app's `SUFeedURL` points at.
 
-The app's `SUFeedURL` points at
+The app's `SUFeedURL` is
 `https://github.com/4cecoder/adventurers-harness/releases/download/latest/appcast.xml` — a stable
-URL regardless of version, since it's attached to the `latest` release/tag rather than a specific
-version tag.
+URL regardless of version or channel.
+
+## Release channels: alpha / beta / stable
+
+Sparkle tells channels apart with a per-item `<sparkle:channel>` tag inside that single shared
+feed — not with separate feed URLs — so `generate_appcast --channel <name>` is what tags each new
+entry, and the client opts into extra channels via `SPUUpdaterDelegate.allowedChannels(for:)`
+(implemented in `AppUpdateManager`). The default (untagged) channel is always included, so each
+tier is additive:
+
+| CI trigger | Channel | `allowedChannels` when selected |
+| --- | --- | --- |
+| Push to `master`/`main` | `alpha` | stable + beta + alpha |
+| Tag `vX.Y.Z-beta.N` | `beta` | stable + beta |
+| Tag `vX.Y.Z` | `stable` (untagged) | stable only |
+
+The channel is picked in `.github/workflows/build-macos-arm64.yml`'s "Determine Release Channel"
+step from `github.ref`, and the user picks which channels to receive in Settings → General →
+Update Channel, persisted via `SettingsModel.updateChannel`.
+
+Only stable tags set `make_latest: true` on the `latest` GitHub Release and only stable tags sync
+the Homebrew formula/cask — alpha and beta builds publish their binaries and appcast entries, but
+never become "the" latest release or reach Homebrew users.
+
+To ship a beta: tag `vX.Y.Z-beta.N` and push it (`git tag v1.1.0-beta.1 && git push origin
+v1.1.0-beta.1`). To ship stable: tag plain `vX.Y.Z`.
 
 ## What Sparkle does at runtime
 
