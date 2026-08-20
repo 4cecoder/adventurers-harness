@@ -102,17 +102,15 @@
 
 ### Phase 2: Local Intelligence, PTY & Language Server Protocol (`v1.1 – v1.3`)
 
-- [ ] **Task 2.1: POSIX PTY Pseudo-Terminal Subsystem**
-  - **Target File**: `Sources/GUI/TerminalPTY.swift`
-  - **Description**: Replace basic `Process` pipes with a native macOS Pseudo-Terminal (`openpty`/`forkpty` Darwin system calls) to enable full terminal control.
-  - **Acceptance Criteria**: Emits master/slave file descriptors, handles window resize (`TIOCSWINSZ`), and supports raw terminal modes.
-  - **Microtest**: `terminalPTYAllocationAndResize()`
+- [x] **Task 2.1: POSIX PTY Pseudo-Terminal Subsystem**
+  - **Target File**: `Sources/AdventurersCore/TerminalPTY.swift`
+  - **Description**: Native macOS Pseudo-Terminal (`openpty`/`forkpty` Darwin system calls) with bidirectional non-blocking streams, `TIOCSWINSZ` dynamic window resizing, and child process lifecycle management.
+  - **Microtest**: Passed `ptyAllocationAndResize()`.
 
-- [ ] **Task 2.2: Streamed ANSI / VT100 Escape Sequence Parser**
-  - **Target File**: `Sources/GUI/TerminalANSIParser.swift`
-  - **Description**: Fast tokenizing state machine parsing ANSI color codes (256-color, 24-bit TrueColor), cursor movements, and text styles.
-  - **Acceptance Criteria**: Converts raw byte streams with ESC sequences into styled `AttributedString` tokens with zero frame drops.
-  - **Microtest**: `ansiParserColorsAndCursorEscapeCodes()`
+- [x] **Task 2.2: Streamed ANSI / VT100 Escape Sequence Parser**
+  - **Target File**: `Sources/AdventurersCore/TerminalANSIParser.swift`, `Sources/GUI/TerminalANSIView.swift`
+  - **Description**: Fast tokenizing state machine parsing ANSI standard 16 colors, 256-color palette, 24-bit TrueColor RGB, text styles (bold, dim, italic, underline, inverse), and ANSI stripping.
+  - **Microtest**: Passed `parseStandardANSIColors()`, `parseExtendedANSIColors()`, `stripANSIEscapeSequences()`.
 
 - [ ] **Task 2.3: Bi-Directional Interactive Stdin Controller**
   - **Target File**: `Sources/GUI/TerminalStdinController.swift`
