@@ -339,58 +339,99 @@ public struct CyberdeckRadioPill: View {
         model.state == .playing || model.state == .buffering || model.state == .resolving
     }
 
+    private var pillBackground: Color {
+        isLive ? Color.adNavy.opacity(0.8) : Color.adElevated
+    }
+
+    private var pillBorderColor: Color {
+        isLive ? Color.cyan.opacity(0.4) : Color.adDivider
+    }
+
+    private var statusTitle: String {
+        model.state == .stopped ? "Vibe Radio" : model.currentTitle
+    }
+
+    private var statusIconColor: Color {
+        if model.state == .error {
+            return Color.adError
+        }
+        return isLive ? Color.cyan : Color.adTextSecondary
+    }
+
+    private func barHeight(index: Int) -> CGFloat {
+        let wave = sin(wavePhase + Double(index) * 1.2) + 1.0
+        return CGFloat(4.0 + wave * 4.0)
+    }
+
     public var body: some View {
         Button {
             model.isPopoverOpen.toggle()
         } label: {
-            HStack(spacing: 6) {
-                if model.state == .playing {
-                    // Animated Equalizer Visualizer Bars
-                    HStack(spacing: 2) {
-                        ForEach(0..<4) { i in
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(Color.cyan)
-                                .frame(width: 2, height: CGFloat(4 + (sin(wavePhase + Double(i) * 1.2) + 1.0) * 4))
-                        }
-                    }
-                    .frame(width: 14, height: 12)
-                    .onAppear {
-                        withAnimation(.easeInOut(duration: 0.35).repeatForever(autoreverses: true)) {
-                            wavePhase = .pi * 2
-                        }
-                    }
-                } else {
-                    Image(systemName: model.state.icon)
-                        .font(.system(size: 11))
-                        .foregroundStyle(model.state == .error ? Color.adError : (isLive ? Color.cyan : Color.adTextSecondary))
-                }
-
-                Text(model.state == .stopped ? "Vibe Radio" : model.currentTitle)
-                    .font(.system(size: 11, weight: isLive ? .semibold : .regular))
-                    .foregroundStyle(isLive ? Color.adTextPrimary : Color.adTextSecondary)
-                    .lineLimit(1)
-                    .frame(maxWidth: 160, alignment: .leading)
-
-                if isLive {
-                    Circle()
-                        .fill(model.state == .playing ? Color.adSuccess : Color.adWarning)
-                        .frame(width: 5, height: 5)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(isLive ? Color.adNavy.opacity(0.8) : Color.adElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(isLive ? Color.cyan.opacity(0.4) : Color.adDivider, lineWidth: 1)
-            )
+            pillContent
         }
         .buttonStyle(.plain)
         .popover(isPresented: $model.isPopoverOpen, arrowEdge: .bottom) {
             CyberdeckPlayerPopoverView(model: model)
         }
         .help("Cyberdeck Vibe Radio & YouTube Audio Player")
+    }
+
+    @ViewBuilder
+    private var pillContent: some View {
+        HStack(spacing: 6) {
+            leadingIndicator
+            titleText
+            trailingDot
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(pillBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(pillBorderColor, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var leadingIndicator: some View {
+        if model.state == .playing {
+            HStack(spacing: 2) {
+                ForEach(0..<4, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color.cyan)
+                        .frame(width: 2, height: barHeight(index: i))
+                }
+            }
+            .frame(width: 14, height: 12)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.35).repeatForever(autoreverses: true)) {
+                    wavePhase = .pi * 2
+                }
+            }
+        } else {
+            Image(systemName: model.state.icon)
+                .font(.system(size: 11))
+                .foregroundStyle(statusIconColor)
+        }
+    }
+
+    @ViewBuilder
+    private var titleText: some View {
+        Text(statusTitle)
+            .font(.system(size: 11, weight: isLive ? .semibold : .regular))
+            .foregroundStyle(isLive ? Color.adTextPrimary : Color.adTextSecondary)
+            .lineLimit(1)
+            .frame(maxWidth: 160, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var trailingDot: some View {
+        if isLive {
+            Circle()
+                .fill(model.state == .playing ? Color.adSuccess : Color.adWarning)
+                .frame(width: 5, height: 5)
+        }
     }
 }
 
