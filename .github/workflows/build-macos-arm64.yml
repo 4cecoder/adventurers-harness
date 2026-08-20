@@ -170,7 +170,7 @@ jobs:
 
       - name: Publish Versioned GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: Adventurers Harness ${{ github.ref_name }} (macOS arm64)${{ env.CHANNEL == 'beta' && ' [Beta]' || '' }}
           draft: false
@@ -219,7 +219,7 @@ jobs:
       # doesn't point at an alpha/beta build.
       - name: Sync Shared Appcast & Latest-Build Assets
         if: env.CHANNEL != 'none'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: latest
           name: Adventurers Harness Latest (macOS Apple Silicon)
