@@ -71,6 +71,8 @@ jobs:
           ./scripts/generate_icon.sh
 
       - name: Package macOS App, DMG & ZIP
+        env:
+          SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
         run: |
           echo "📦 Packaging Release application for Apple Silicon..."
           chmod +x scripts/package_app.sh
@@ -89,6 +91,18 @@ jobs:
           echo "🔒 SHA256 Checksums:"
           cat dist/*.sha256
 
+      - name: Generate Signed Sparkle Appcast
+        if: ${{ secrets.SPARKLE_PRIVATE_KEY != '' }}
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          echo "📡 Fetching existing appcast.xml (if any) so version/delta history accumulates..."
+          curl -sL -f -o dist/appcast.xml "https://github.com/4cecoder/adventurers-harness/releases/download/latest/appcast.xml" || rm -f dist/appcast.xml
+          chmod +x scripts/sparkle_tools.sh
+          echo "🔏 Generating & signing appcast.xml..."
+          echo "$SPARKLE_PRIVATE_KEY" | ./scripts/sparkle_tools.sh generate_appcast --ed-key-file - dist/
+          ls -la dist/appcast.xml
+
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -101,6 +115,15 @@ jobs:
             dist/Adventurers-macOS-arm64.zip.sha256
             dist/Adventurers-macOS-arm64.tar.gz.sha256
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Appcast Artifact
+        if: ${{ secrets.SPARKLE_PRIVATE_KEY != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Adventurers-appcast
+          path: dist/appcast.xml
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Publish Versioned GitHub Release
@@ -117,6 +140,7 @@ jobs:
             dist/Adventurers-macOS-arm64.dmg.sha256
             dist/Adventurers-macOS-arm64.zip.sha256
             dist/Adventurers-macOS-arm64.tar.gz.sha256
+            dist/appcast.xml
           generate_release_notes: true
 
       - name: Sync Homebrew Formula & Cask
@@ -160,6 +184,7 @@ jobs:
             dist/Adventurers-macOS-arm64.dmg.sha256
             dist/Adventurers-macOS-arm64.zip.sha256
             dist/Adventurers-macOS-arm64.tar.gz.sha256
+            dist/appcast.xml
           body: |
             ### Automated Continuous Build (macOS ARM64)
             Built from commit `${{ github.sha }}` on `master`.

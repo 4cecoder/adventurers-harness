@@ -125,7 +125,7 @@ struct WorkbenchStatusBar: View {
                     .foregroundStyle(Color.adTextTertiary)
 
                 Button {
-                    AppUpdateManager.shared.showsUpdateModal = true
+                    AppUpdateManager.shared.checkForUpdates()
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.up.circle.fill")

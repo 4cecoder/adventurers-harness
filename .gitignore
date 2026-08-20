@@ -5,6 +5,8 @@
 .swiftpm/
 DerivedData/
 dist/
+.sparkle-tools/
+appcast.xml
 assets/AppIcon.iconset/
 scripts/*_bin
 scripts/render_icon

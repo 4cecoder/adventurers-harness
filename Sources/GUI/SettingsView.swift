@@ -1738,6 +1738,9 @@ private struct LLMProviderSettingsPane: View {
 
 private struct GeneralSettingsPane: View {
     @Bindable var model: SettingsModel
+    @State private var duplicateCopies: [InstalledAppCopy] = []
+    @State private var hasScannedForDuplicates = false
+    @State private var duplicateRemovalError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -1753,6 +1756,9 @@ private struct GeneralSettingsPane: View {
             VStack(spacing: 12) {
                 Toggle("Open last project on launch", isOn: $model.openLastProjectOnLaunch)
                 Toggle("Check for updates on launch", isOn: $model.checkUpdatesOnLaunch)
+                    .onChange(of: model.checkUpdatesOnLaunch) { _, newValue in
+                        AppUpdateManager.shared.automaticallyChecksForUpdates = newValue
+                    }
                 Toggle("Auto-compact token history at 80% limit", isOn: $model.autoCompact)
             }
             .padding(14)
@@ -1777,15 +1783,15 @@ private struct GeneralSettingsPane: View {
                             .foregroundStyle(Color.adTextPrimary)
 
                         if case .checking = AppUpdateManager.shared.status {
-                            Text("Checking GitHub releases...")
+                            Text("Checking for updates...")
                                 .font(.system(size: 11))
                                 .foregroundStyle(Color.adTextSecondary)
-                        } else if case .updateAvailable(let rel) = AppUpdateManager.shared.status {
-                            Text("🚀 Update available: v\(rel.versionString)")
+                        } else if case .updateAvailable(let version) = AppUpdateManager.shared.status {
+                            Text("🚀 Update available: v\(version)")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(Color.adSuccess)
                         } else if case .upToDate = AppUpdateManager.shared.status {
-                            Text("✓ Up to date (Latest release on GitHub)")
+                            Text("✓ Up to date")
                                 .font(.system(size: 11))
                                 .foregroundStyle(Color.adSuccess)
                         } else if case .failed(let err) = AppUpdateManager.shared.status {
@@ -1801,28 +1807,67 @@ private struct GeneralSettingsPane: View {
 
                     Spacer()
 
-                    if case .updateAvailable = AppUpdateManager.shared.status {
-                        Button("Update Now") {
-                            AppUpdateManager.shared.showsUpdateModal = true
+                    Button {
+                        AppUpdateManager.shared.checkForUpdates()
+                    } label: {
+                        HStack(spacing: 4) {
+                            if case .checking = AppUpdateManager.shared.status {
+                                ProgressView().controlSize(.mini)
+                            } else if case .updateAvailable = AppUpdateManager.shared.status {
+                                Image(systemName: "arrow.down.circle.fill")
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            Text(AppUpdateManager.shared.isUpdateAvailable ? "Update Now" : "Check for Updates")
                         }
-                        .buttonStyle(.plain)
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Color.black)
+                        .foregroundStyle(AppUpdateManager.shared.isUpdateAvailable ? Color.black : Color.adTextPrimary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(Color.adOrange)
+                        .background(AppUpdateManager.shared.isUpdateAvailable ? Color.adOrange : Color.adElevated)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
-                    } else {
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!AppUpdateManager.shared.canCheckForUpdates)
+                }
+                .padding(14)
+                .background(Color.adCard)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
+            }
+
+            // Duplicate Installs Card — only ever inspects/removes from /Applications; never
+            // touches ~/Downloads, ~/Desktop, or any other user folder.
+            VStack(alignment: .leading, spacing: 10) {
+                Text("DUPLICATE INSTALLS")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.adTextTertiary)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "square.stack.3d.up.slash")
+                            .font(.system(size: 20))
+                            .foregroundStyle(Color.adInfo)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Old copies in /Applications")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.adTextPrimary)
+                            Text(duplicateStatusText)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.adTextSecondary)
+                        }
+
+                        Spacer()
+
                         Button {
-                            AppUpdateManager.shared.checkForUpdates(silent: false)
+                            duplicateCopies = DuplicateInstallCleaner.removableCopies()
+                            hasScannedForDuplicates = true
+                            duplicateRemovalError = nil
                         } label: {
                             HStack(spacing: 4) {
-                                if case .checking = AppUpdateManager.shared.status {
-                                    ProgressView().controlSize(.mini)
-                                } else {
-                                    Image(systemName: "arrow.clockwise")
-                                }
-                                Text("Check for Updates")
+                                Image(systemName: "magnifyingglass")
+                                Text("Scan")
                             }
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Color.adTextPrimary)
@@ -1832,7 +1877,37 @@ private struct GeneralSettingsPane: View {
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain)
-                        .disabled(AppUpdateManager.shared.status == .checking)
+                    }
+
+                    if let duplicateRemovalError {
+                        Text("⚠️ \(duplicateRemovalError)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.adWarning)
+                    }
+
+                    ForEach(duplicateCopies) { copy in
+                        HStack(spacing: 10) {
+                            Text((copy.bundlePath as NSString).lastPathComponent)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(Color.adTextSecondary)
+                            Text("v\(copy.version)")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.adTextTertiary)
+                            Spacer()
+                            Button("Move to Trash") {
+                                do {
+                                    try DuplicateInstallCleaner.moveToTrash(copy)
+                                    duplicateCopies.removeAll { $0.id == copy.id }
+                                    duplicateRemovalError = nil
+                                } catch {
+                                    duplicateRemovalError = error.localizedDescription
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.adWarning)
+                        }
+                        .padding(.horizontal, 4)
                     }
                 }
                 .padding(14)
@@ -1881,6 +1956,16 @@ private struct GeneralSettingsPane: View {
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.adDivider, lineWidth: 1))
             }
         }
+    }
+
+    private var duplicateStatusText: String {
+        guard hasScannedForDuplicates else {
+            return "Scan for other copies of this app left behind in /Applications by manual installs or old updates."
+        }
+        if duplicateCopies.isEmpty {
+            return "✓ No duplicate copies found."
+        }
+        return "\(duplicateCopies.count) other copy(s) found — safe to move to Trash."
     }
 }
 

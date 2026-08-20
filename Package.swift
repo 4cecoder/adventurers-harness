@@ -12,7 +12,9 @@ let package = Package(
         .library(name: "AdventurersCore", targets: ["AdventurersCore"]),
         .library(name: "LLMProviders", targets: ["LLMProviders"]),
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.6.4"),
+    ],
     targets: [
         // Core harness: agent loop, FSM, gates, contracts, journal
         .target(
@@ -49,6 +51,7 @@ let package = Package(
                 "AdventurersCore",
                 "LLMProviders",
                 "Tools",
+                .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/GUI",
             swiftSettings: [

@@ -513,12 +513,10 @@ struct ContentView: View {
         .sheet(isPresented: Bindable(appState).showsCommandPalette) {
             CommandPaletteModal()
         }
-        .sheet(isPresented: Bindable(AppUpdateManager.shared).showsUpdateModal) {
-            UpdateModalView()
-        }
         .onAppear {
+            AppUpdateManager.shared.automaticallyChecksForUpdates = appState.settingsModel.checkUpdatesOnLaunch
             if appState.settingsModel.checkUpdatesOnLaunch {
-                AppUpdateManager.shared.checkForUpdates(silent: true)
+                AppUpdateManager.shared.checkForUpdatesInBackground()
             }
         }
     }
@@ -1556,8 +1554,9 @@ struct AgentCommands: Commands {
     var body: some Commands {
         CommandGroup(after: .appInfo) {
             Button("Check for Updates...") {
-                AppUpdateManager.shared.checkForUpdates(silent: false)
+                AppUpdateManager.shared.checkForUpdates()
             }
+            .disabled(!AppUpdateManager.shared.canCheckForUpdates)
         }
 
         CommandGroup(replacing: .newItem) {
