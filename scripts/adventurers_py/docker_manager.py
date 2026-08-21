@@ -58,13 +58,13 @@ def check_hindsight_health(port: int = HINDSIGHT_PORT) -> Dict[str, Any]:
     return {"running": False, "status": "offline", "port": port}
 
 def start_docker_compose(compose_file: str = COMPOSE_FILE) -> Dict[str, Any]:
-    """Starts local Docker Compose services in detached mode."""
+    """Starts local Docker Compose services in detached mode with build."""
     if not is_docker_daemon_running():
         return {"success": False, "error": "Docker daemon is not running. Please launch Docker Desktop or colima."}
     
     try:
-        cmd = ["docker", "compose", "-f", compose_file, "up", "-d"]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30.0)
+        cmd = ["docker", "compose", "-f", compose_file, "up", "-d", "--build"]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=180.0)
         return {"success": res.returncode == 0, "output": res.stdout or res.stderr}
     except Exception as e:
         return {"success": False, "error": str(e)}
