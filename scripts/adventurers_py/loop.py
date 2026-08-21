@@ -9,15 +9,17 @@ import httpx
 from typing import List, Dict, Any, Optional
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 from rich.syntax import Syntax
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .tools import dispatch_tool, TOOLS_SCHEMAS
 from .gates import SyntaxGate, RepeatGate, DiffGate, GuardianCircuitBreaker
 from .models import SMALL_MODELS_REGISTRY, SmallModelSpec
+from .repair_engine import repair_json_string, normalize_tool_arguments
+from .context_optimizer import ContextOptimizer
 
 console = Console()
+
 
 class AdventurersAgentLoop:
     def __init__(
@@ -25,41 +27,55 @@ class AdventurersAgentLoop:
         base_url: str = "http://localhost:1234",
         active_model_id: str = "prism-ml/bonsai-27b",
         max_turns: int = 10,
-        enable_needle_edge: bool = True
+        enable_needle_edge: bool = True,
     ):
         self.base_url = base_url
         self.active_model_id = active_model_id
         self.max_turns = max_turns
         self.enable_needle_edge = enable_needle_edge
-        
+
         self.repeat_gate = RepeatGate()
         self.circuit_breaker = GuardianCircuitBreaker()
         self.messages: List[Dict[str, Any]] = []
 
     def run(self, prompt: str) -> Dict[str, Any]:
         """Runs the autonomous thinking loop until objective complete or max turns reached."""
-        console.print(Panel(
-            f"[bold white]{prompt}[/bold white]",
-            title="[bold cyan]⚡ New Task Input[/bold cyan]",
-            border_style="cyan"
-        ))
+        console.print(
+            Panel(
+                f"[bold white]{prompt}[/bold white]",
+                title="[bold cyan]⚡ New Task Input[/bold cyan]",
+                border_style="cyan",
+            )
+        )
 
         # --- PHASE 1: Needle 2 On-Device Fast-Path & Intent Gating ---
         if self.enable_needle_edge:
             start_edge = time.perf_counter()
             lower = prompt.lower().strip()
-            
-            if lower.startswith("git ") or lower in ("git status", "git diff", "git log"):
+
+            if lower.startswith("git ") or lower in (
+                "git status",
+                "git diff",
+                "git log",
+            ):
                 # Execute direct fast-path
                 res_str = dispatch_tool("run_command", {"command": prompt})
                 edge_ms = (time.perf_counter() - start_edge) * 1000.0
-                console.print(f"[bold green]⚡ Needle 2 Fast-Path Intercept ({edge_ms:.1f}ms / 0 cloud tokens)[/bold green]")
-                console.print(Panel(
-                    json.loads(res_str).get("output", ""),
-                    title="[bold green]Fast-Path Native Execution[/bold green]",
-                    border_style="green"
-                ))
-                return {"status": "completed", "resolved_by": "Needle 2 Edge", "turns": 1}
+                console.print(
+                    f"[bold green]⚡ Needle 2 Fast-Path Intercept ({edge_ms:.1f}ms / 0 cloud tokens)[/bold green]"
+                )
+                console.print(
+                    Panel(
+                        json.loads(res_str).get("output", ""),
+                        title="[bold green]Fast-Path Native Execution[/bold green]",
+                        border_style="green",
+                    )
+                )
+                return {
+                    "status": "completed",
+                    "resolved_by": "Needle 2 Edge",
+                    "turns": 1,
+                }
 
         self.messages.append({"role": "user", "content": prompt})
 
@@ -68,10 +84,14 @@ class AdventurersAgentLoop:
         while turn < self.max_turns:
             turn += 1
             if self.circuit_breaker.is_tripped:
-                console.print("[bold red]🚨 Circuit Breaker Tripped: 3 consecutive failures. Aborting loop safely.[/bold red]")
+                console.print(
+                    "[bold red]🚨 Circuit Breaker Tripped: 3 consecutive failures. Aborting loop safely.[/bold red]"
+                )
                 return {"status": "circuit_breaker_tripped", "turns": turn}
 
-            console.print(f"\n[bold yellow]━━━ Turn {turn}/{self.max_turns} [{self.active_model_id}] ━━━[/bold yellow]")
+            console.print(
+                f"\n[bold yellow]━━━ Turn {turn}/{self.max_turns} [{self.active_model_id}] ━━━[/bold yellow]"
+            )
 
             # Call Model via /v1/responses or /v1/chat/completions
             response_payload = self._call_model_endpoint(prompt)
@@ -84,18 +104,22 @@ class AdventurersAgentLoop:
             reasoning = response_payload.get("reasoning")
 
             if reasoning:
-                console.print(Panel(
-                    reasoning,
-                    title="[bold yellow]🧠 Model Chain-of-Thought Reasoning[/bold yellow]",
-                    border_style="yellow"
-                ))
+                console.print(
+                    Panel(
+                        reasoning,
+                        title="[bold yellow]🧠 Model Chain-of-Thought Reasoning[/bold yellow]",
+                        border_style="yellow",
+                    )
+                )
 
             if assistant_text and not tool_calls:
-                console.print(Panel(
-                    assistant_text,
-                    title="[bold green]Assistant Response[/bold green]",
-                    border_style="green"
-                ))
+                console.print(
+                    Panel(
+                        assistant_text,
+                        title="[bold green]Assistant Response[/bold green]",
+                        border_style="green",
+                    )
+                )
                 return {"status": "completed", "output": assistant_text, "turns": turn}
 
             # Process Tool Calls
@@ -106,7 +130,15 @@ class AdventurersAgentLoop:
             for tc in tool_calls:
                 name = tc.get("name")
                 raw_args = tc.get("arguments", {})
-                args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                
+                if isinstance(raw_args, str):
+                    repaired, err = repair_json_string(raw_args)
+                    args = repaired if repaired is not None else {}
+                else:
+                    args = raw_args
+
+                # Normalize types (e.g. string line numbers to ints)
+                args = normalize_tool_arguments(name, args)
 
                 # 1. Repeat Gate Check
                 rep_ok, rep_err = self.repeat_gate.record_and_check(name, args)
@@ -117,10 +149,14 @@ class AdventurersAgentLoop:
 
                 # 2. Syntax Gate Check for file writes
                 if name in ("replace_file_content", "write_to_file"):
-                    code = args.get("replacement_content") or args.get("code_content", "")
+                    code = args.get("replacement_content") or args.get(
+                        "code_content", ""
+                    )
                     syn_ok, syn_err = SyntaxGate.verify(code)
                     if not syn_ok:
-                        console.print(f"[bold red]⛔ Syntax Gate Rejected Code: {syn_err}[/bold red]")
+                        console.print(
+                            f"[bold red]⛔ Syntax Gate Rejected Code: {syn_err}[/bold red]"
+                        )
                         self.circuit_breaker.record_outcome(False)
                         continue
 
@@ -135,16 +171,20 @@ class AdventurersAgentLoop:
                         continue
 
                 # 4. Dispatch Tool
-                console.print(f"[bold cyan]⚡ Tool Call:[/bold cyan] [yellow]{name}[/yellow] args={json.dumps(args)}")
+                console.print(
+                    f"[bold cyan]⚡ Tool Call:[/bold cyan] [yellow]{name}[/yellow] args={json.dumps(args)}"
+                )
                 start_tool = time.perf_counter()
                 result_json = dispatch_tool(name, args)
                 tool_ms = (time.perf_counter() - start_tool) * 1000.0
 
-                console.print(Panel(
-                    Syntax(result_json, "json", theme="monokai"),
-                    title=f"[bold green]Tool Result ({tool_ms:.1f}ms)[/bold green]",
-                    border_style="green"
-                ))
+                console.print(
+                    Panel(
+                        Syntax(result_json, "json", theme="monokai"),
+                        title=f"[bold green]Tool Result ({tool_ms:.1f}ms)[/bold green]",
+                        border_style="green",
+                    )
+                )
 
                 self.circuit_breaker.record_outcome(True)
 
@@ -160,10 +200,14 @@ class AdventurersAgentLoop:
             "model": self.active_model_id,
             "input": prompt,
             "tools": TOOLS_SCHEMAS,
-            "tool_choice": "auto"
+            "tool_choice": "auto",
         }
 
-        with Progress(SpinnerColumn(), TextColumn(f"[bold magenta]Inference ({self.active_model_id})..."), transient=True) as p:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn(f"[bold magenta]Inference ({self.active_model_id})..."),
+            transient=True,
+        ) as p:
             p.add_task("call", total=None)
             try:
                 with httpx.Client(timeout=180.0) as client:
@@ -186,10 +230,12 @@ class AdventurersAgentLoop:
                         if c.get("type") == "reasoning_text":
                             reasoning_text = c.get("text")
                 elif t == "function_call":
-                    tool_calls.append({
-                        "name": item.get("name"),
-                        "arguments": item.get("arguments", {})
-                    })
+                    tool_calls.append(
+                        {
+                            "name": item.get("name"),
+                            "arguments": item.get("arguments", {}),
+                        }
+                    )
                 elif t == "message":
                     for c in item.get("content", []):
                         if c.get("type") == "output_text":
@@ -200,14 +246,13 @@ class AdventurersAgentLoop:
                 msg = ch.get("message", {})
                 for tc in msg.get("tool_calls", []):
                     fn = tc.get("function", {})
-                    tool_calls.append({
-                        "name": fn.get("name"),
-                        "arguments": fn.get("arguments", "{}")
-                    })
+                    tool_calls.append(
+                        {"name": fn.get("name"), "arguments": fn.get("arguments", "{}")}
+                    )
                 assistant_content = msg.get("content")
 
         return {
             "tool_calls": tool_calls,
             "reasoning": reasoning_text,
-            "content": assistant_content
+            "content": assistant_content,
         }
