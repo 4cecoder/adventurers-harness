@@ -14,7 +14,10 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .tools import dispatch_tool, TOOLS_SCHEMAS
 from .gates import SyntaxGate, RepeatGate, DiffGate, GuardianCircuitBreaker
+from .models import SMALL_MODELS_REGISTRY, SmallModelSpec
 from .repair_engine import repair_json_string, normalize_tool_arguments
+from .context_optimizer import ContextOptimizer
+from .self_healer import generate_repair_capsule
 
 console = Console()
 

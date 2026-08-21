@@ -110,3 +110,30 @@ def test_context_optimizer():
     optimized = opt.optimize_messages(msgs)
     assert len(optimized) == 4
     assert "[COMPACTED]" in optimized[2]["content"]
+
+
+def test_fuzzy_whitespace_replace(tmp_path):
+    from adventurers_py.tools import replace_file_content, write_to_file, view_file
+    fpath = os.path.join(tmp_path, "fuzzy.py")
+    write_to_file(fpath, "def hello():\n    print('hello world')\n")
+
+    # Replace with slightly different indentation/whitespace in target
+    res = replace_file_content(fpath, "def hello():\n      print('hello world')", "def hello():\n    print('hello universe')")
+    assert res["success"] is True
+    assert res["match_type"] == "fuzzy_whitespace_tolerant"
+
+    v_res = view_file(fpath)
+    assert "hello universe" in v_res["content"]
+
+
+def test_self_healing_capsule():
+    from adventurers_py.self_healer import generate_repair_capsule
+    capsule = generate_repair_capsule(
+        tool_name="replace_file_content",
+        failed_args={"path": "main.py"},
+        error_message="Target content not found",
+        file_context="def main(): return 0"
+    )
+    assert "[SYSTEM GATE REPAIR GUIDANCE]" in capsule
+    assert "replace_file_content" in capsule
+    assert "view_file" in capsule

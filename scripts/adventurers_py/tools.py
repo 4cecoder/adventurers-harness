@@ -96,7 +96,7 @@ def view_file(
 def replace_file_content(
     path: str, target_content: str, replacement_content: str
 ) -> Dict[str, Any]:
-    """Replaces a precise text block in a file with exact match validation."""
+    """Replaces a precise text block in a file with exact match & whitespace-tolerant fallback."""
     if not os.path.exists(path):
         return {"success": False, "error": f"File not found: {path}"}
 
@@ -104,27 +104,65 @@ def replace_file_content(
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        if target_content not in content:
+        # 1. Exact match fast-path
+        if target_content in content:
+            count = content.count(target_content)
+            if count > 1:
+                return {
+                    "success": False,
+                    "error": f"Target content matches {count} occurrences. Specify a larger unique block.",
+                }
+            new_content = content.replace(target_content, replacement_content, 1)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(new_content)
             return {
-                "success": False,
-                "error": "Target content not found in file. Ensure exact whitespace and line match.",
+                "success": True,
+                "path": path,
+                "replaced_bytes": len(replacement_content),
+                "match_type": "exact"
             }
 
-        count = content.count(target_content)
-        if count > 1:
+        # 2. Whitespace-tolerant line-by-line matching (recovers from small indentation shifts)
+        content_lines = content.splitlines(keepends=True)
+        target_lines = target_content.splitlines()
+
+        if not target_lines:
+            return {"success": False, "error": "Target content is empty."}
+
+        # Strip whitespace for fuzzy scan
+        target_stripped = [tl.strip() for tl in target_lines if tl.strip()]
+        matches = []
+
+        for i in range(len(content_lines) - len(target_lines) + 1):
+            window = content_lines[i : i + len(target_lines)]
+            window_stripped = [w.strip() for w in window if w.strip()]
+            if window_stripped == target_stripped:
+                matches.append((i, i + len(target_lines)))
+
+        if len(matches) == 1:
+            start_idx, end_idx = matches[0]
+            # Replace the matched lines
+            new_lines = content_lines[:start_idx] + [replacement_content + ("\n" if not replacement_content.endswith("\n") else "")] + content_lines[end_idx:]
+            with open(path, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+            return {
+                "success": True,
+                "path": path,
+                "replaced_bytes": len(replacement_content),
+                "match_type": "fuzzy_whitespace_tolerant",
+                "matched_lines": (start_idx + 1, end_idx)
+            }
+        elif len(matches) > 1:
             return {
                 "success": False,
-                "error": f"Target content matches {count} occurrences. Specify a larger unique block.",
+                "error": f"Fuzzy target matched {len(matches)} locations. Include more surrounding lines.",
             }
 
-        new_content = content.replace(target_content, replacement_content, 1)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(new_content)
-
+        # 3. No match found: return closest matching context hint
         return {
-            "success": True,
-            "path": path,
-            "replaced_bytes": len(replacement_content),
+            "success": False,
+            "error": "Target content not found in file. Check line numbers and exact content.",
+            "hint": f"File has {len(content_lines)} total lines."
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
