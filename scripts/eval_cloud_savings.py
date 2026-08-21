@@ -59,6 +59,45 @@ class TaskResult:
         )
 
 
+# Few-shot prefixes — added after the first pilot run showed zero-shot prompting has a real
+# instruction-following ceiling on a model this small: it classified "run the test suite" as
+# COMPLEX, and on tool-call extraction it pattern-matched/copied the nearest example's content
+# instead of generalizing (echoed "README.md" when asked about "Package.swift"). Two examples
+# wasn't enough to break the copy-the-example failure mode; three with clear ### delimiters was.
+FEWSHOT_CLASSIFY = """Classify each request as SIMPLE or COMPLEX. Reply with exactly one word.
+
+Examples:
+Request: "check git status"
+Answer: SIMPLE
+
+Request: "run the test suite"
+Answer: SIMPLE
+
+Request: "redesign the authentication system to support OAuth2 across all microservices"
+Answer: COMPLEX
+
+Now classify this request:
+Request: "{request}"
+Answer:"""
+
+FEWSHOT_EXTRACT_TOOL_CALL = """Extract a JSON tool call from the request. Output ONLY JSON.
+
+### Example 1
+Request: show me the README
+JSON: {{"tool": "view_file", "path": "README.md"}}
+
+### Example 2
+Request: find all TODO comments
+JSON: {{"tool": "grep_search", "query": "TODO"}}
+
+### Example 3
+Request: open the LICENSE file
+JSON: {{"tool": "view_file", "path": "LICENSE"}}
+
+### Your task
+Request: {request}
+JSON:"""
+
 # Representative agent micro-tasks: the same style Needle already fast-paths in the Swift app
 # (run tests, git status, list files, grep) plus tool-call generation, which is the harder case
 # that actually determines whether a tiny model can replace cloud for routing/decomposition.
@@ -66,36 +105,29 @@ TASKS = [
     {
         "name": "Classify: simple vs complex request",
         "category": "Routing",
-        "prompt": (
-            'Reply with exactly one word, either SIMPLE or COMPLEX. Request: "run the test suite"'
-        ),
+        "prompt": FEWSHOT_CLASSIFY.format(request="run the test suite"),
         "check": lambda out: "SIMPLE" in out.upper() and "COMPLEX" not in out.upper(),
     },
     {
         "name": "Classify: simple vs complex request (hard case)",
         "category": "Routing",
-        "prompt": (
-            "Reply with exactly one word, either SIMPLE or COMPLEX. "
-            'Request: "refactor the authentication module to support OAuth2 '
-            'and migrate all existing sessions without downtime"'
+        "prompt": FEWSHOT_CLASSIFY.format(
+            request="refactor the authentication module to support OAuth2 "
+            "and migrate all existing sessions without downtime"
         ),
         "check": lambda out: "COMPLEX" in out.upper(),
     },
     {
         "name": "Generate tool call: view a file",
         "category": "Tool-call generation",
-        "prompt": (
-            'Output ONLY a JSON object (no other text) with keys "tool" and "path" '
-            'for this request: "show me Package.swift"'
-        ),
+        "prompt": FEWSHOT_EXTRACT_TOOL_CALL.format(request="show me Package.swift"),
         "check": lambda out: _has_json_keys(out, {"tool", "path"}) and "Package.swift" in out,
     },
     {
         "name": "Generate tool call: grep search",
         "category": "Tool-call generation",
-        "prompt": (
-            'Output ONLY a JSON object (no other text) with keys "tool" and "query" '
-            'for this request: "find all TODO comments in the codebase"'
+        "prompt": FEWSHOT_EXTRACT_TOOL_CALL.format(
+            request="find all TODO comments in the codebase"
         ),
         "check": lambda out: _has_json_keys(out, {"tool", "query"}) and "TODO" in out,
     },
@@ -139,7 +171,14 @@ def run_task(task: dict) -> TaskResult:
                 "stream": False,
                 "think": False,  # MiniCPM5 is a hybrid reasoning model — without this it burns
                 # hundreds to 1000+ tokens on a <think> chain even for a one-word answer.
-                "options": {"num_predict": 200},  # hard cap as a backstop even with think off
+                "options": {
+                    "num_predict": 200,  # hard cap as a backstop even with think off
+                    # Without temperature=0 the *safety* classification is non-deterministic:
+                    # the identical "rm -rf /" prompt returned SAFE on one run and DANGEROUS on
+                    # another. Not optional for anything gating destructive actions.
+                    "temperature": 0,
+                    "seed": 42,
+                },
             },
             timeout=60.0,
         )
