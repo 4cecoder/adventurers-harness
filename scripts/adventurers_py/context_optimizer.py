@@ -21,9 +21,7 @@ def compact_tool_output(tool_name: str, output_str: str, max_chars: int = 240) -
     if len(lines) > 4:
         first_line = lines[0][:80]
         last_line = lines[-1][:80]
-        return (
-            f"[{tool_name} returned {len(lines)} lines]: {first_line} ... {last_line}"
-        )
+        return f"[{tool_name} returned {len(lines)} lines]: {first_line} ... {last_line}"
     return output_str[:max_chars] + " ... [truncated]"
 
 
@@ -58,8 +56,6 @@ class ContextOptimizer:
             role = m.get("role", "assistant")
             content = m.get("content", "") or ""
             compacted_content = compact_tool_output("turn", content, max_chars=120)
-            compacted_middle.append(
-                {"role": role, "content": f"[COMPACTED]: {compacted_content}"}
-            )
+            compacted_middle.append({"role": role, "content": f"[COMPACTED]: {compacted_content}"})
 
         return head + compacted_middle + tail

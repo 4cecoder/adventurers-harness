@@ -20,7 +20,6 @@ import json
 import time
 import httpx
 import needle
-from typing import Any, Dict, List, Optional
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -31,16 +30,26 @@ console = Console()
 
 # MARK: - Local Tools Definition for Tier 1 & Tier 2
 
+
 @needle.tool
 def get_current_weather(location: str, unit: str = "fahrenheit"):
     """Get the current weather for a city."""
     temp = 68 if unit.lower().startswith("f") else 20
-    return {"location": location, "temperature": f"{temp}°{unit[0].upper()}", "condition": "Partly Cloudy"}
+    return {
+        "location": location,
+        "temperature": f"{temp}°{unit[0].upper()}",
+        "condition": "Partly Cloudy",
+    }
+
 
 @needle.tool
 def run_git_command(command: str):
     """Run a safe local git command."""
-    return {"command": command, "output": "On branch master\nYour branch is up to date with 'origin/master'."}
+    return {
+        "command": command,
+        "output": "On branch master\nYour branch is up to date with 'origin/master'.",
+    }
+
 
 TOOLS_SCHEMA = [
     {
@@ -51,33 +60,40 @@ TOOLS_SCHEMA = [
             "type": "object",
             "properties": {
                 "location": {"type": "string", "description": "City and state name"},
-                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
             },
-            "required": ["location", "unit"]
-        }
+            "required": ["location", "unit"],
+        },
     }
 ]
 
 # MARK: - Tri-Tier Engine Execution
 
+
 def execute_tri_tier_pipeline(user_prompt: str, base_url: str = "http://localhost:1234"):
-    console.print(Panel(
-        f"[bold white]{user_prompt}[/bold white]",
-        title="[bold cyan]1. Inbound User Request[/bold cyan]",
-        border_style="cyan"
-    ))
+    console.print(
+        Panel(
+            f"[bold white]{user_prompt}[/bold white]",
+            title="[bold cyan]1. Inbound User Request[/bold cyan]",
+            border_style="cyan",
+        )
+    )
 
     # --- TIER 1: Cactus Needle 2 (Edge Router / 14MB) ---
     start_t1 = time.perf_counter()
     needle_agent = needle.Needle(tools=[get_current_weather, run_git_command])
-    
-    with Progress(SpinnerColumn(), TextColumn("[bold yellow]Tier 1: Cactus Needle 2 evaluating intent..."), transient=True) as p:
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold yellow]Tier 1: Cactus Needle 2 evaluating intent..."),
+        transient=True,
+    ) as p:
         p.add_task("Needle 2", total=None)
         t1_res = needle_agent.run(user_prompt)
-        
+
     t1_ms = (time.perf_counter() - start_t1) * 1000.0
     t1_confidence = float(t1_res.get("confidence") or 0.0)
-    t1_prefill = float(t1_res.get("prefill_tps") or 950.0)
+    float(t1_res.get("prefill_tps") or 950.0)
     t1_decode = float(t1_res.get("decode_tps") or 610.0)
     t1_results = t1_res.get("results") or []
 
@@ -96,15 +112,23 @@ def execute_tri_tier_pipeline(user_prompt: str, base_url: str = "http://localhos
             "Needle 2 (45M / 14MB)",
             f"{t1_ms:.1f} ms",
             f"[green]{t1_decode:.1f} tok/s[/green]",
-            f"[green]{t1_confidence*100:.1f}%[/green]",
-            "[bold green]RESOLVED_ON_DEVICE (0 cloud tokens)[/bold green]"
+            f"[green]{t1_confidence * 100:.1f}%[/green]",
+            "[bold green]RESOLVED_ON_DEVICE (0 cloud tokens)[/bold green]",
         )
-        console.print(Panel(tier_table, title="[bold yellow]Hierarchy Decision & Telemetry[/bold yellow]", border_style="yellow"))
-        console.print(Panel(
-            Syntax(json.dumps(t1_results, indent=2), "json", theme="monokai"),
-            title="[bold green]Fast-Path On-Device Execution Result[/bold green]",
-            border_style="green"
-        ))
+        console.print(
+            Panel(
+                tier_table,
+                title="[bold yellow]Hierarchy Decision & Telemetry[/bold yellow]",
+                border_style="yellow",
+            )
+        )
+        console.print(
+            Panel(
+                Syntax(json.dumps(t1_results, indent=2), "json", theme="monokai"),
+                title="[bold green]Fast-Path On-Device Execution Result[/bold green]",
+                border_style="green",
+            )
+        )
         console.print("[bold green]✔ High-TPS Tier 1 loop completed instantly![/bold green]\n")
         return
 
@@ -114,8 +138,8 @@ def execute_tri_tier_pipeline(user_prompt: str, base_url: str = "http://localhos
         "Needle 2 (45M / 14MB)",
         f"{t1_ms:.1f} ms",
         f"[green]{t1_decode:.1f} tok/s[/green]",
-        f"[yellow]{t1_confidence*100:.1f}%[/yellow]",
-        "[bold cyan]ESCALATE -> TIER 2 / TIER 3[/bold cyan]"
+        f"[yellow]{t1_confidence * 100:.1f}%[/yellow]",
+        "[bold cyan]ESCALATE -> TIER 2 / TIER 3[/bold cyan]",
     )
 
     # --- TIER 2: Mid-Tier Coder (High-Throughput Drafting ~220 TPS) ---
@@ -131,7 +155,7 @@ def execute_tri_tier_pipeline(user_prompt: str, base_url: str = "http://localhos
         f"{t2_ms:.1f} ms",
         f"[cyan]{t2_tps:.1f} tok/s[/cyan]",
         "94.0%",
-        "[bold magenta]MULTI-TURN REASONING -> TIER 3[/bold magenta]"
+        "[bold magenta]MULTI-TURN REASONING -> TIER 3[/bold magenta]",
     )
 
     # --- TIER 3: Bonsai 27B (Deep CoT Reasoning & Responses API) ---
@@ -141,11 +165,15 @@ def execute_tri_tier_pipeline(user_prompt: str, base_url: str = "http://localhos
         "model": "prism-ml/bonsai-27b",
         "input": user_prompt,
         "tools": TOOLS_SCHEMA,
-        "tool_choice": "auto"
+        "tool_choice": "auto",
     }
 
     response_data = {}
-    with Progress(SpinnerColumn(), TextColumn("[bold magenta]Tier 3: Bonsai 27B generating deep CoT reasoning..."), transient=True) as p:
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold magenta]Tier 3: Bonsai 27B generating deep CoT reasoning..."),
+        transient=True,
+    ) as p:
         p.add_task("Bonsai", total=None)
         try:
             with httpx.Client(timeout=300.0) as client:
@@ -165,10 +193,16 @@ def execute_tri_tier_pipeline(user_prompt: str, base_url: str = "http://localhos
         f"{t3_ms:.1f} ms",
         f"[magenta]{t3_tps:.1f} tok/s[/magenta]",
         "99.8%",
-        "[bold green]PROVED_&_VERIFIED[/bold green]"
+        "[bold green]PROVED_&_VERIFIED[/bold green]",
     )
 
-    console.print(Panel(tier_table, title="[bold yellow]Tri-Tier Multi-Level Thinking Pipeline[/bold yellow]", border_style="yellow"))
+    console.print(
+        Panel(
+            tier_table,
+            title="[bold yellow]Tri-Tier Multi-Level Thinking Pipeline[/bold yellow]",
+            border_style="yellow",
+        )
+    )
 
     # Extract CoT & Tool Calls
     reasoning_texts = []
@@ -181,18 +215,22 @@ def execute_tri_tier_pipeline(user_prompt: str, base_url: str = "http://localhos
                     if c.get("type") == "reasoning_text":
                         reasoning_texts.append(c.get("text", "").strip())
             elif item.get("type") == "function_call":
-                tool_calls.append({
-                    "id": item.get("call_id") or item.get("id", "call_0"),
-                    "name": item.get("name"),
-                    "arguments": item.get("arguments", "{}")
-                })
+                tool_calls.append(
+                    {
+                        "id": item.get("call_id") or item.get("id", "call_0"),
+                        "name": item.get("name"),
+                        "arguments": item.get("arguments", "{}"),
+                    }
+                )
 
     if reasoning_texts:
-        console.print(Panel(
-            "\n".join(reasoning_texts),
-            title="[bold yellow]🧠 Tier 3 Bonsai 27B Chain-of-Thought Reasoning Trace[/bold yellow]",
-            border_style="yellow"
-        ))
+        console.print(
+            Panel(
+                "\n".join(reasoning_texts),
+                title="[bold yellow]🧠 Tier 3 Bonsai 27B Chain-of-Thought Reasoning Trace[/bold yellow]",
+                border_style="yellow",
+            )
+        )
 
     if tool_calls:
         tool_table = Table(show_header=True, header_style="bold cyan")
@@ -205,18 +243,31 @@ def execute_tri_tier_pipeline(user_prompt: str, base_url: str = "http://localhos
             name = tc["name"]
             raw_args = tc["arguments"]
             args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-            res_obj = {"location": args.get("location", "Boston, MA"), "temperature": "68°F", "condition": "Partly Cloudy"}
+            res_obj = {
+                "location": args.get("location", "Boston, MA"),
+                "temperature": "68°F",
+                "condition": "Partly Cloudy",
+            }
 
             tool_table.add_row(
                 str(tc["id"]),
                 f"[bold yellow]{name}[/bold yellow]",
                 json.dumps(args),
-                f"[green]{json.dumps(res_obj)}[/green]"
+                f"[green]{json.dumps(res_obj)}[/green]",
             )
 
-        console.print(Panel(tool_table, title="[bold cyan]Verified Tool Resolution Loop[/bold cyan]", border_style="cyan"))
+        console.print(
+            Panel(
+                tool_table,
+                title="[bold cyan]Verified Tool Resolution Loop[/bold cyan]",
+                border_style="cyan",
+            )
+        )
 
-    console.print("\n[bold green]✔ High-TPS Tri-Tier Thinking Loop completed with deterministic verification![/bold green]\n")
+    console.print(
+        "\n[bold green]✔ High-TPS Tri-Tier Thinking Loop completed with deterministic verification![/bold green]\n"
+    )
+
 
 if __name__ == "__main__":
     prompt = sys.argv[1] if len(sys.argv) > 1 else "What is the weather like in Boston today?"

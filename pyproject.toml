@@ -14,3 +14,18 @@ dependencies = [
 [tool.pytest.ini_options]
 pythonpath = ["scripts"]
 testpaths = ["scripts/tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-include = ["scripts/**/*.py"]
+
+[tool.ruff.lint]
+# Kept deliberately small: E/F/W (pycodestyle + pyflakes) catch real bugs (unused imports/vars,
+# undefined names) with near-zero noise. Broader rule sets (isort import sorting, pyupgrade,
+# bugbear) each add 30-100+ pre-existing violations on this codebase's current Python — worth
+# adopting later as a deliberate decision, not silently via a "just set up the hooks" pass.
+select = ["E", "F", "W"]
+# Rich/console-heavy pipeline scripts routinely have long formatted strings; ruff format already
+# wraps what it safely can, so E501 mostly just flags things not worth breaking across lines.
+ignore = ["E501"]

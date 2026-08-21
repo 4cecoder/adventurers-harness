@@ -16,18 +16,17 @@ from pydantic import BaseModel
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.syntax import Syntax
-from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .tools import dispatch_tool, TOOLS_SCHEMAS
-from .gates import SyntaxGate, RepeatGate, DiffGate, GuardianCircuitBreaker
-from .models import SMALL_MODELS_REGISTRY, SmallModelSpec
+from .gates import SyntaxGate, RepeatGate
 
 console = Console()
+
 
 def is_internet_available(timeout_sec: float = 0.5) -> bool:
     """Ultra-fast (<50ms) non-blocking socket probe to test active internet connectivity."""
     import socket
+
     try:
         socket.setdefaulttimeout(timeout_sec)
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -41,6 +40,7 @@ def is_internet_available(timeout_sec: float = 0.5) -> bool:
         except Exception:
             return False
 
+
 class MicroTask(BaseModel):
     step_num: int
     name: str
@@ -49,6 +49,7 @@ class MicroTask(BaseModel):
     status: str = "PENDING"  # PENDING | EXECUTED | VERIFIED | FAILED
     output: Optional[str] = None
     exec_latency_ms: float = 0.0
+
 
 class ModelTelemetry(BaseModel):
     role: str
@@ -59,6 +60,7 @@ class ModelTelemetry(BaseModel):
     measured_tps: float
     status: str
 
+
 class SwarmReport(BaseModel):
     task: str
     total_latency_ms: float
@@ -68,6 +70,7 @@ class SwarmReport(BaseModel):
     tokens_saved_vs_cloud: int
     escalated_to_bonsai: bool
 
+
 class CooperativeSmallModelSwarm:
     def __init__(
         self,
@@ -75,7 +78,7 @@ class CooperativeSmallModelSwarm:
         decomposer_model: str = "openbmb/minicpm-1b",
         drafter_model: str = "qwen2.5-0.5b-instruct",
         oracle_model: str = "prism-ml/bonsai-27b",
-        confidence_threshold: float = 0.75
+        confidence_threshold: float = 0.75,
     ):
         self.base_url = base_url
         self.decomposer_model = decomposer_model
@@ -91,37 +94,45 @@ class CooperativeSmallModelSwarm:
         micro_tasks: List[MicroTask] = []
         escalated = False
 
-        console.print(Panel(
-            f"[bold white]{prompt}[/bold white]",
-            title="[bold cyan]1. Inbound Swarm Mission[/bold cyan]",
-            border_style="cyan"
-        ))
+        console.print(
+            Panel(
+                f"[bold white]{prompt}[/bold white]",
+                title="[bold cyan]1. Inbound Swarm Mission[/bold cyan]",
+                border_style="cyan",
+            )
+        )
 
         # =========================================================================
         # PHASE 1: Needle 2 (45M / 14MB) — Intent Invariant & Edge Fast-Path
         # =========================================================================
         start_t1 = time.perf_counter()
         lower = prompt.lower().strip()
-        
+
         # Check for instant developer shell/git fast-path
-        is_fast_path = lower.startswith("git ") or lower in ("git status", "git diff", "git log")
+        is_fast_path = lower.startswith("git ") or lower in (
+            "git status",
+            "git diff",
+            "git log",
+        )
         t1_latency = (time.perf_counter() - start_t1) * 1000.0 + 1.2
         t1_tps = 965.2
 
-        telemetry.append(ModelTelemetry(
-            role="Edge Router & Invariant",
-            model_name="Cactus Needle 2 (45M)",
-            params="45M",
-            size_mb=14,
-            latency_ms=t1_latency,
-            measured_tps=t1_tps,
-            status="FAST_PATH" if is_fast_path else "ROUTED_TO_SWARM"
-        ))
+        telemetry.append(
+            ModelTelemetry(
+                role="Edge Router & Invariant",
+                model_name="Cactus Needle 2 (45M)",
+                params="45M",
+                size_mb=14,
+                latency_ms=t1_latency,
+                measured_tps=t1_tps,
+                status="FAST_PATH" if is_fast_path else "ROUTED_TO_SWARM",
+            )
+        )
 
         if is_fast_path:
             res_str = dispatch_tool("run_command", {"command": prompt})
             total_elapsed = (time.perf_counter() - start_swarm) * 1000.0
-            
+
             mt = MicroTask(
                 step_num=1,
                 name="Execute Git Command",
@@ -129,15 +140,17 @@ class CooperativeSmallModelSwarm:
                 arguments={"command": prompt},
                 status="VERIFIED",
                 output=json.loads(res_str).get("output"),
-                exec_latency_ms=total_elapsed
+                exec_latency_ms=total_elapsed,
             )
             micro_tasks.append(mt)
 
-            console.print(Panel(
-                json.loads(res_str).get("output", ""),
-                title=f"[bold green]Needle 2 Fast-Path Result ({t1_latency:.1f}ms / 0 Cloud Tokens)[/bold green]",
-                border_style="green"
-            ))
+            console.print(
+                Panel(
+                    json.loads(res_str).get("output", ""),
+                    title=f"[bold green]Needle 2 Fast-Path Result ({t1_latency:.1f}ms / 0 Cloud Tokens)[/bold green]",
+                    border_style="green",
+                )
+            )
 
             return SwarmReport(
                 task=prompt,
@@ -146,7 +159,7 @@ class CooperativeSmallModelSwarm:
                 telemetry=telemetry,
                 micro_tasks=micro_tasks,
                 tokens_saved_vs_cloud=450,
-                escalated_to_bonsai=False
+                escalated_to_bonsai=False,
             )
 
         # =========================================================================
@@ -157,15 +170,17 @@ class CooperativeSmallModelSwarm:
         t2_latency = (time.perf_counter() - start_t2) * 1000.0
         t2_tps = 320.0
 
-        telemetry.append(ModelTelemetry(
-            role="Task Decomposer",
-            model_name="MiniCPM5-1B (INT4 0.5GB)",
-            params="1.0B",
-            size_mb=520,
-            latency_ms=t2_latency,
-            measured_tps=t2_tps,
-            status=f"DECOMPOSED_INTO_{len(decomp_steps)}_STEPS"
-        ))
+        telemetry.append(
+            ModelTelemetry(
+                role="Task Decomposer",
+                model_name="MiniCPM5-1B (INT4 0.5GB)",
+                params="1.0B",
+                size_mb=520,
+                latency_ms=t2_latency,
+                measured_tps=t2_tps,
+                status=f"DECOMPOSED_INTO_{len(decomp_steps)}_STEPS",
+            )
+        )
 
         decomp_table = Table(show_header=True, header_style="bold yellow")
         decomp_table.add_column("Step")
@@ -178,10 +193,16 @@ class CooperativeSmallModelSwarm:
                 str(s.step_num),
                 s.name,
                 f"[yellow]{s.target_tool}[/yellow]",
-                json.dumps(s.arguments)
+                json.dumps(s.arguments),
             )
 
-        console.print(Panel(decomp_table, title="[bold yellow]2. MiniCPM5 1B Deterministic Task Decomposition[/bold yellow]", border_style="yellow"))
+        console.print(
+            Panel(
+                decomp_table,
+                title="[bold yellow]2. MiniCPM5 1B Deterministic Task Decomposition[/bold yellow]",
+                border_style="yellow",
+            )
+        )
 
         # =========================================================================
         # PHASE 3: Qwen 2.5 0.5B / 1.5B — High-Throughput Drafting & Tool Execution
@@ -225,37 +246,43 @@ class CooperativeSmallModelSwarm:
         t3_latency = (time.perf_counter() - start_t3) * 1000.0
         t3_tps = 450.0
 
-        telemetry.append(ModelTelemetry(
-            role="Drafting & Tool Workhorse",
-            model_name="Qwen2.5-0.5B (397MB)",
-            params="500M",
-            size_mb=397,
-            latency_ms=t3_latency,
-            measured_tps=t3_tps,
-            status="VERIFIED_ALL_STEPS" if all_passed else "GATE_REJECTED"
-        ))
+        telemetry.append(
+            ModelTelemetry(
+                role="Drafting & Tool Workhorse",
+                model_name="Qwen2.5-0.5B (397MB)",
+                params="500M",
+                size_mb=397,
+                latency_ms=t3_latency,
+                measured_tps=t3_tps,
+                status="VERIFIED_ALL_STEPS" if all_passed else "GATE_REJECTED",
+            )
+        )
 
         # =========================================================================
         # PHASE 4: Bonsai 27B — Escalation Oracle (Only if Gate Tripped)
         # =========================================================================
         if not all_passed:
             escalated = True
-            console.print("[bold red]⚠️ Verification gate tripped during small model execution. Escalating to Bonsai 27B for root-cause repair...[/bold red]")
+            console.print(
+                "[bold red]⚠️ Verification gate tripped during small model execution. Escalating to Bonsai 27B for root-cause repair...[/bold red]"
+            )
             start_t4 = time.perf_counter()
-            
-            bonsai_fix = self._call_bonsai_oracle(prompt, micro_tasks)
+
+            self._call_bonsai_oracle(prompt, micro_tasks)
             t4_latency = (time.perf_counter() - start_t4) * 1000.0
             t4_tps = 48.0
 
-            telemetry.append(ModelTelemetry(
-                role="Escalation Oracle",
-                model_name="Bonsai 27B (1-bit 5GB)",
-                params="27B",
-                size_mb=5120,
-                latency_ms=t4_latency,
-                measured_tps=t4_tps,
-                status="ORACLE_PROVED_&_REPAIRED"
-            ))
+            telemetry.append(
+                ModelTelemetry(
+                    role="Escalation Oracle",
+                    model_name="Bonsai 27B (1-bit 5GB)",
+                    params="27B",
+                    size_mb=5120,
+                    latency_ms=t4_latency,
+                    measured_tps=t4_tps,
+                    status="ORACLE_PROVED_&_REPAIRED",
+                )
+            )
 
         total_latency = (time.perf_counter() - start_swarm) * 1000.0
 
@@ -271,7 +298,7 @@ class CooperativeSmallModelSwarm:
             telemetry=telemetry,
             micro_tasks=micro_tasks,
             tokens_saved_vs_cloud=1200 if not escalated else 400,
-            escalated_to_bonsai=escalated
+            escalated_to_bonsai=escalated,
         )
 
     def _decompose_task(self, prompt: str) -> List[MicroTask]:
@@ -281,41 +308,50 @@ class CooperativeSmallModelSwarm:
 
         if "find" in lower or "search" in lower:
             # Step 1: Search
-            query = prompt.replace("find", "").replace("search", "").strip()
-            tasks.append(MicroTask(
-                step_num=1,
-                name="Scan Repository",
-                target_tool="find_by_name",
-                arguments={"pattern": "*.py" if "python" in lower else "*"}
-            ))
+            prompt.replace("find", "").replace("search", "").strip()
+            tasks.append(
+                MicroTask(
+                    step_num=1,
+                    name="Scan Repository",
+                    target_tool="find_by_name",
+                    arguments={"pattern": "*.py" if "python" in lower else "*"},
+                )
+            )
             # Step 2: Check Status
-            tasks.append(MicroTask(
-                step_num=2,
-                name="Verify Git State",
-                target_tool="run_command",
-                arguments={"command": "git status -s"}
-            ))
+            tasks.append(
+                MicroTask(
+                    step_num=2,
+                    name="Verify Git State",
+                    target_tool="run_command",
+                    arguments={"command": "git status -s"},
+                )
+            )
         elif "test" in lower:
-            tasks.append(MicroTask(
-                step_num=1,
-                name="Execute Test Suite",
-                target_tool="run_command",
-                arguments={"command": "swift test --filter HierarchicalThinkingLoopTests"}
-            ))
+            tasks.append(
+                MicroTask(
+                    step_num=1,
+                    name="Execute Test Suite",
+                    target_tool="run_command",
+                    arguments={"command": "swift test --filter HierarchicalThinkingLoopTests"},
+                )
+            )
         else:
             # Generic discovery
-            tasks.append(MicroTask(
-                step_num=1,
-                name="Enumerate Workspace",
-                target_tool="find_by_name",
-                arguments={"pattern": "*.py"}
-            ))
+            tasks.append(
+                MicroTask(
+                    step_num=1,
+                    name="Enumerate Workspace",
+                    target_tool="find_by_name",
+                    arguments={"pattern": "*.py"},
+                )
+            )
 
         return tasks
 
     def _call_bonsai_oracle(self, prompt: str, failed_tasks: List[MicroTask]) -> str:
         """Invokes OpenCode Go MiMo v2.5 (if online & subscribed) or Bonsai 27B (local offline)."""
         import os
+
         opencode_key = os.environ.get("OPENCODE_API_KEY")
 
         # 1. Check if device is connected to the internet
@@ -323,15 +359,26 @@ class CooperativeSmallModelSwarm:
 
         if online and opencode_key:
             # Cloud Teacher: OpenCode Go Plan (MiMo v2.5)
-            console.print("[bold cyan]🌐 Internet detected: Engaging Tier 5 Cloud Teacher (OpenCode Go MiMo v2.5)...[/bold cyan]")
+            console.print(
+                "[bold cyan]🌐 Internet detected: Engaging Tier 5 Cloud Teacher (OpenCode Go MiMo v2.5)...[/bold cyan]"
+            )
             endpoint = "https://api.opencode.ai/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {opencode_key}", "Content-Type": "application/json"}
+            headers = {
+                "Authorization": f"Bearer {opencode_key}",
+                "Content-Type": "application/json",
+            }
             payload = {
                 "model": "mimo-v2.5",
                 "messages": [
-                    {"role": "system", "content": "You are the Cloud Teacher Oracle. Analyze failed on-device micro-tasks and provide root-cause repair."},
-                    {"role": "user", "content": f"Task: {prompt}\nFailed steps: {[t.dict() for t in failed_tasks]}"}
-                ]
+                    {
+                        "role": "system",
+                        "content": "You are the Cloud Teacher Oracle. Analyze failed on-device micro-tasks and provide root-cause repair.",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Task: {prompt}\nFailed steps: {[t.dict() for t in failed_tasks]}",
+                    },
+                ],
             }
             try:
                 with httpx.Client(timeout=30.0) as client:
@@ -339,9 +386,13 @@ class CooperativeSmallModelSwarm:
                     resp.raise_for_status()
                     return resp.json()["choices"][0]["message"]["content"]
             except Exception as e:
-                console.print(f"[dim]OpenCode cloud endpoint unreachable ({e}); falling back to local on-device Bonsai 27B...[/dim]")
+                console.print(
+                    f"[dim]OpenCode cloud endpoint unreachable ({e}); falling back to local on-device Bonsai 27B...[/dim]"
+                )
         elif not online:
-            console.print("[dim]🔒 Device is offline / air-gapped; maintaining 100% on-device execution with Bonsai 27B...[/dim]")
+            console.print(
+                "[dim]🔒 Device is offline / air-gapped; maintaining 100% on-device execution with Bonsai 27B...[/dim]"
+            )
 
         # 2. Local Fallback: Bonsai 27B via LM Studio /v1/responses (100% On-Device)
         endpoint = f"{self.base_url}/v1/responses"
@@ -349,7 +400,7 @@ class CooperativeSmallModelSwarm:
             "model": self.oracle_model,
             "input": f"Repair task: {prompt}. Failed micro-tasks: {[t.dict() for t in failed_tasks]}",
             "tools": TOOLS_SCHEMAS,
-            "tool_choice": "auto"
+            "tool_choice": "auto",
         }
         try:
             with httpx.Client(timeout=120.0) as client:
@@ -363,7 +414,7 @@ class CooperativeSmallModelSwarm:
         telemetry: List[ModelTelemetry],
         tasks: List[MicroTask],
         total_ms: float,
-        escalated: bool
+        escalated: bool,
     ):
         table = Table(show_header=True, header_style="bold green")
         table.add_column("Swarm Role")
@@ -377,13 +428,19 @@ class CooperativeSmallModelSwarm:
             table.add_row(
                 f"[bold cyan]{t.role}[/bold cyan]",
                 t.model_name,
-                f"{t.size_mb} MB" if t.size_mb < 1024 else f"{t.size_mb/1024:.1f} GB",
+                f"{t.size_mb} MB" if t.size_mb < 1024 else f"{t.size_mb / 1024:.1f} GB",
                 f"{t.latency_ms:.1f} ms",
                 f"[green]{t.measured_tps:.1f} tok/s[/green]",
-                f"[yellow]{t.status}[/yellow]"
+                f"[yellow]{t.status}[/yellow]",
             )
 
-        console.print(Panel(table, title="[bold cyan]3. Ultra-Small Model Swarm Telemetry[/bold cyan]", border_style="cyan"))
+        console.print(
+            Panel(
+                table,
+                title="[bold cyan]3. Ultra-Small Model Swarm Telemetry[/bold cyan]",
+                border_style="cyan",
+            )
+        )
 
         # Micro-task Results
         task_table = Table(show_header=True, header_style="bold yellow")
@@ -398,9 +455,19 @@ class CooperativeSmallModelSwarm:
                 str(m.step_num),
                 m.name,
                 m.target_tool,
-                f"[bold green]{m.status}[/bold green]" if m.status == "VERIFIED" else f"[bold red]{m.status}[/bold red]",
-                f"{m.exec_latency_ms:.1f} ms"
+                f"[bold green]{m.status}[/bold green]"
+                if m.status == "VERIFIED"
+                else f"[bold red]{m.status}[/bold red]",
+                f"{m.exec_latency_ms:.1f} ms",
             )
 
-        console.print(Panel(task_table, title="[bold yellow]4. Semi-Deterministic Micro-Task Outcomes[/bold yellow]", border_style="yellow"))
-        console.print(f"[bold green]✔ Swarm Mission Completed in {total_ms:.1f}ms (Escalated to Bonsai: {escalated})[/bold green]\n")
+        console.print(
+            Panel(
+                task_table,
+                title="[bold yellow]4. Semi-Deterministic Micro-Task Outcomes[/bold yellow]",
+                border_style="yellow",
+            )
+        )
+        console.print(
+            f"[bold green]✔ Swarm Mission Completed in {total_ms:.1f}ms (Escalated to Bonsai: {escalated})[/bold green]\n"
+        )

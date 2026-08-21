@@ -80,9 +80,10 @@ def test_model_roster_data():
     assert SMALL_MODELS_REGISTRY["needle2"].expected_tps >= 900.0
     assert SMALL_MODELS_REGISTRY["minicpm-1b"].context_window == 131072
 
+
 def test_json_repair_engine():
     from adventurers_py.repair_engine import repair_json_string, normalize_tool_arguments
-    
+
     # 1. Single quotes & trailing commas
     malformed = "{'path': 'test.swift', 'start_line': '1',}"
     repaired, err = repair_json_string(malformed)
@@ -93,17 +94,19 @@ def test_json_repair_engine():
     norm = normalize_tool_arguments("view_file", repaired)
     assert norm["start_line"] == 1
 
+
 def test_context_optimizer():
     from adventurers_py.context_optimizer import ContextOptimizer
+
     opt = ContextOptimizer(max_token_budget=50, tail_turns_preserved=1)
-    
+
     msgs = [
         {"role": "system", "content": "You are a coding agent."},
         {"role": "user", "content": "Task A"},
         {"role": "assistant", "content": "Executing long output " * 50},
-        {"role": "user", "content": "Next step"}
+        {"role": "user", "content": "Next step"},
     ]
-    
+
     optimized = opt.optimize_messages(msgs)
     assert len(optimized) == 4
     assert "[COMPACTED]" in optimized[2]["content"]

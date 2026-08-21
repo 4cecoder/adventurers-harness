@@ -3,8 +3,9 @@ Smallest High-TPS On-Device LLM Registry
 Tracks sub-1B to 1B parameter models, context windows, and expected throughput on Apple Silicon.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict
 from pydantic import BaseModel
+
 
 class SmallModelSpec(BaseModel):
     name: str
@@ -15,6 +16,7 @@ class SmallModelSpec(BaseModel):
     expected_tps: float
     description: str
 
+
 SMALL_MODELS_REGISTRY: Dict[str, SmallModelSpec] = {
     "needle2": SmallModelSpec(
         name="Cactus Needle 2",
@@ -23,7 +25,7 @@ SMALL_MODELS_REGISTRY: Dict[str, SmallModelSpec] = {
         quantized_size_mb=14,
         context_window=8192,
         expected_tps=960.0,
-        description="14MB foundation model for edge tool calling & schema extraction."
+        description="14MB foundation model for edge tool calling & schema extraction.",
     ),
     "smollm-135m": SmallModelSpec(
         name="SmolLM 135M",
@@ -32,7 +34,7 @@ SMALL_MODELS_REGISTRY: Dict[str, SmallModelSpec] = {
         quantized_size_mb=90,
         context_window=2048,
         expected_tps=750.0,
-        description="Ultra-lightweight grammatical model from Hugging Face."
+        description="Ultra-lightweight grammatical model from Hugging Face.",
     ),
     "lfm-230m": SmallModelSpec(
         name="LFM 2.5 230M",
@@ -41,7 +43,7 @@ SMALL_MODELS_REGISTRY: Dict[str, SmallModelSpec] = {
         quantized_size_mb=160,
         context_window=4096,
         expected_tps=600.0,
-        description="Liquid AI edge agentic model for Raspberry Pi & mobile."
+        description="Liquid AI edge agentic model for Raspberry Pi & mobile.",
     ),
     "qwen-0.5b": SmallModelSpec(
         name="Qwen 2.5 0.5B",
@@ -50,7 +52,7 @@ SMALL_MODELS_REGISTRY: Dict[str, SmallModelSpec] = {
         quantized_size_mb=397,
         context_window=32768,
         expected_tps=450.0,
-        description="Fastest CPU-friendly multi-turn instruction model."
+        description="Fastest CPU-friendly multi-turn instruction model.",
     ),
     "minicpm-1b": SmallModelSpec(
         name="MiniCPM5 1B",
@@ -59,7 +61,7 @@ SMALL_MODELS_REGISTRY: Dict[str, SmallModelSpec] = {
         quantized_size_mb=520,
         context_window=131072,  # 128K context
         expected_tps=280.0,
-        description="INT4 0.5GB powerhouse with 128K context & native tool-use."
+        description="INT4 0.5GB powerhouse with 128K context & native tool-use.",
     ),
     "qwen-coder-1.5b": SmallModelSpec(
         name="Qwen 2.5 Coder 1.5B",
@@ -68,7 +70,7 @@ SMALL_MODELS_REGISTRY: Dict[str, SmallModelSpec] = {
         quantized_size_mb=980,
         context_window=32768,
         expected_tps=220.0,
-        description="Dedicated coding agent workhorse for fast patches."
+        description="Dedicated coding agent workhorse for fast patches.",
     ),
     "bonsai-27b": SmallModelSpec(
         name="Bonsai 27B (1-bit)",
@@ -77,7 +79,7 @@ SMALL_MODELS_REGISTRY: Dict[str, SmallModelSpec] = {
         quantized_size_mb=5120,  # ~5.0 GB in 1-bit / 1.5-bit quantization
         context_window=32768,
         expected_tps=48.0,
-        description="Deep CoT frontier model (~5GB in 1-bit / BitNet CQ) via LM Studio /v1/responses."
+        description="Deep CoT frontier model (~5GB in 1-bit / BitNet CQ) via LM Studio /v1/responses.",
     ),
     "mimo-v2.5": SmallModelSpec(
         name="OpenCode MiMo v2.5",
@@ -86,6 +88,6 @@ SMALL_MODELS_REGISTRY: Dict[str, SmallModelSpec] = {
         quantized_size_mb=0,  # Cloud Subscription
         context_window=128000,
         expected_tps=110.0,
-        description="OpenCode Go Plan subscription Cloud Teacher & Architectural Oracle."
+        description="OpenCode Go Plan subscription Cloud Teacher & Architectural Oracle.",
     ),
 }

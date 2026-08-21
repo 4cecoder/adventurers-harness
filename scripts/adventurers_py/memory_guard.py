@@ -8,6 +8,7 @@ import socket
 import httpx
 from typing import Optional, Dict, Any
 
+
 def is_hindsight_docker_running(port: int = 8888, timeout_sec: float = 0.2) -> bool:
     """Checks if a local Hindsight container is actively listening on localhost."""
     try:
@@ -17,6 +18,7 @@ def is_hindsight_docker_running(port: int = 8888, timeout_sec: float = 0.2) -> b
         return True
     except Exception:
         return False
+
 
 class HindsightMemoryManager:
     def __init__(self, docker_port: int = 8888):
@@ -32,7 +34,7 @@ class HindsightMemoryManager:
         """Queries local Docker Hindsight if running, else returns None to use native OKF store."""
         if not self.should_use_hindsight():
             return None
-        
+
         try:
             with httpx.Client(timeout=1.0) as client:
                 resp = client.get(f"http://127.0.0.1:{self.docker_port}/health")

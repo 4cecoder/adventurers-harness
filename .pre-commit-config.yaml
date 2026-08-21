@@ -1,4 +1,5 @@
-# Pre-commit hooks for Adventurers Harness (Swift/SwiftPM macOS app).
+# Pre-commit hooks for Adventurers Harness — a Swift/SwiftPM macOS app with a growing set of
+# Python pipeline-experiment scripts under scripts/.
 #
 # Deliberately does NOT run SwiftLint/SwiftFormat as blocking commit-time checks: this codebase
 # predates this config and doesn't match either tool's defaults (94+/97 files would need
@@ -6,6 +7,9 @@
 # links against SourceKit), which not every contributor's machine has — only Command Line Tools
 # are guaranteed. A `.swiftformat` config is included for anyone who wants to run it manually;
 # adopting it repo-wide as an enforced hook is a deliberate future decision, not bundled here.
+#
+# Ruff (Python) IS enforced, in auto-fix mode, scoped to E/F/W (pyflakes + pycodestyle) only —
+# see pyproject.toml for why the broader rule sets (isort, pyupgrade, bugbear) aren't enabled yet.
 #
 # Install with: pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
 
@@ -22,6 +26,13 @@ repos:
       - id: mixed-line-ending
       - id: check-yaml
       - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.4
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.0

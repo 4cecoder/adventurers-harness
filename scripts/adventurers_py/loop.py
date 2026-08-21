@@ -14,9 +14,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .tools import dispatch_tool, TOOLS_SCHEMAS
 from .gates import SyntaxGate, RepeatGate, DiffGate, GuardianCircuitBreaker
-from .models import SMALL_MODELS_REGISTRY, SmallModelSpec
 from .repair_engine import repair_json_string, normalize_tool_arguments
-from .context_optimizer import ContextOptimizer
 
 console = Console()
 
@@ -130,7 +128,7 @@ class AdventurersAgentLoop:
             for tc in tool_calls:
                 name = tc.get("name")
                 raw_args = tc.get("arguments", {})
-                
+
                 if isinstance(raw_args, str):
                     repaired, err = repair_json_string(raw_args)
                     args = repaired if repaired is not None else {}
@@ -149,9 +147,7 @@ class AdventurersAgentLoop:
 
                 # 2. Syntax Gate Check for file writes
                 if name in ("replace_file_content", "write_to_file"):
-                    code = args.get("replacement_content") or args.get(
-                        "code_content", ""
-                    )
+                    code = args.get("replacement_content") or args.get("code_content", "")
                     syn_ok, syn_err = SyntaxGate.verify(code)
                     if not syn_ok:
                         console.print(
