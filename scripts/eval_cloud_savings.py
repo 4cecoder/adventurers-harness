@@ -1,0 +1,237 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "httpx",
+#     "rich",
+# ]
+# ///
+"""
+Cloud-Savings Benchmark: real tiny-model inference vs. estimated cloud cost.
+
+Unlike eval_tiny_models.py (which tests the deterministic scaffolding around where a model
+plugs in — JSON repair, syntax gates, tool execution — with zero actual inference), this sends
+real prompts to a locally-served tiny model via Ollama and measures what actually matters for
+the "reduce cloud reliance" goal: does it produce a correct/parseable result, and how many cloud
+dollars would the same prompt+completion have cost if a cloud model had handled it instead.
+
+Requires Ollama running locally with a model pulled (default: openbmb/minicpm5, already present
+on this machine at 688MB). Cloud cost is a rough estimate using Claude Sonnet list pricing
+($3/M input tokens, $15/M output tokens as of this writing) — a reference point, not live pricing.
+"""
+
+import json
+import re
+import sys
+import time
+from dataclasses import dataclass, field
+
+import httpx
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
+console = Console()
+
+OLLAMA_URL = "http://localhost:11434/api/generate"
+MODEL = "openbmb/minicpm5:latest"
+
+# Reference cloud pricing (USD per million tokens) — Claude Sonnet list price as of this writing.
+# A reference point for "what would this have cost in cloud," not live/authoritative pricing.
+CLOUD_INPUT_USD_PER_M = 3.00
+CLOUD_OUTPUT_USD_PER_M = 15.00
+
+
+@dataclass
+class TaskResult:
+    name: str
+    category: str
+    passed: bool
+    latency_ms: float
+    prompt_tokens: int
+    completion_tokens: int
+    cloud_cost_usd: float = field(init=False)
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        self.cloud_cost_usd = (
+            self.prompt_tokens / 1_000_000 * CLOUD_INPUT_USD_PER_M
+            + self.completion_tokens / 1_000_000 * CLOUD_OUTPUT_USD_PER_M
+        )
+
+
+# Representative agent micro-tasks: the same style Needle already fast-paths in the Swift app
+# (run tests, git status, list files, grep) plus tool-call generation, which is the harder case
+# that actually determines whether a tiny model can replace cloud for routing/decomposition.
+TASKS = [
+    {
+        "name": "Classify: simple vs complex request",
+        "category": "Routing",
+        "prompt": (
+            'Reply with exactly one word, either SIMPLE or COMPLEX. Request: "run the test suite"'
+        ),
+        "check": lambda out: "SIMPLE" in out.upper() and "COMPLEX" not in out.upper(),
+    },
+    {
+        "name": "Classify: simple vs complex request (hard case)",
+        "category": "Routing",
+        "prompt": (
+            "Reply with exactly one word, either SIMPLE or COMPLEX. "
+            'Request: "refactor the authentication module to support OAuth2 '
+            'and migrate all existing sessions without downtime"'
+        ),
+        "check": lambda out: "COMPLEX" in out.upper(),
+    },
+    {
+        "name": "Generate tool call: view a file",
+        "category": "Tool-call generation",
+        "prompt": (
+            'Output ONLY a JSON object (no other text) with keys "tool" and "path" '
+            'for this request: "show me Package.swift"'
+        ),
+        "check": lambda out: _has_json_keys(out, {"tool", "path"}) and "Package.swift" in out,
+    },
+    {
+        "name": "Generate tool call: grep search",
+        "category": "Tool-call generation",
+        "prompt": (
+            'Output ONLY a JSON object (no other text) with keys "tool" and "query" '
+            'for this request: "find all TODO comments in the codebase"'
+        ),
+        "check": lambda out: _has_json_keys(out, {"tool", "query"}) and "TODO" in out,
+    },
+    {
+        "name": "Extract shell command from request",
+        "category": "Tool-call generation",
+        "prompt": (
+            "Output ONLY the exact shell command (no explanation, no markdown) "
+            'for this request: "check git status"'
+        ),
+        "check": lambda out: "git status" in out.lower(),
+    },
+    {
+        "name": "Detect destructive command intent",
+        "category": "Safety classification",
+        "prompt": ('Reply with exactly one word, either SAFE or DANGEROUS. Command: "rm -rf /"'),
+        "check": lambda out: "DANGEROUS" in out.upper(),
+    },
+]
+
+
+def _has_json_keys(text: str, keys: set[str]) -> bool:
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return False
+    try:
+        obj = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return False
+    return keys.issubset(obj.keys())
+
+
+def run_task(task: dict) -> TaskResult:
+    start = time.perf_counter()
+    try:
+        resp = httpx.post(
+            OLLAMA_URL,
+            json={
+                "model": MODEL,
+                "prompt": task["prompt"],
+                "stream": False,
+                "think": False,  # MiniCPM5 is a hybrid reasoning model — without this it burns
+                # hundreds to 1000+ tokens on a <think> chain even for a one-word answer.
+                "options": {"num_predict": 200},  # hard cap as a backstop even with think off
+            },
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, json.JSONDecodeError) as e:
+        return TaskResult(
+            name=task["name"],
+            category=task["category"],
+            passed=False,
+            latency_ms=(time.perf_counter() - start) * 1000.0,
+            prompt_tokens=0,
+            completion_tokens=0,
+            detail=f"Request failed: {e}",
+        )
+
+    latency_ms = (time.perf_counter() - start) * 1000.0
+    output = data.get("response", "")
+    passed = bool(task["check"](output))
+
+    return TaskResult(
+        name=task["name"],
+        category=task["category"],
+        passed=passed,
+        latency_ms=latency_ms,
+        prompt_tokens=data.get("prompt_eval_count", 0),
+        completion_tokens=data.get("eval_count", 0),
+        detail=output[:80].replace("\n", " "),
+    )
+
+
+def main() -> None:
+    console.print(
+        Panel(
+            f"[bold]Cloud-Savings Benchmark[/bold] — real inference via Ollama ({MODEL})\n"
+            "Measures task success against what the same prompt+completion would cost in cloud tokens.",
+            style="cyan",
+        )
+    )
+
+    try:
+        httpx.get("http://localhost:11434/api/tags", timeout=3.0).raise_for_status()
+    except httpx.HTTPError:
+        console.print(
+            "[bold red]✖ Ollama isn't reachable at localhost:11434.[/bold red] Run `ollama serve` first."
+        )
+        sys.exit(1)
+
+    results = [run_task(t) for t in TASKS]
+
+    table = Table(title=f"{sum(r.passed for r in results)}/{len(results)} tasks passed")
+    table.add_column("Task")
+    table.add_column("Category")
+    table.add_column("Result")
+    table.add_column("Latency", justify="right")
+    table.add_column("Tokens (in/out)", justify="right")
+    table.add_column("Est. cloud cost", justify="right")
+
+    for r in results:
+        table.add_row(
+            r.name,
+            r.category,
+            "[green]PASS[/green]" if r.passed else "[red]FAIL[/red]",
+            f"{r.latency_ms:.0f} ms",
+            f"{r.prompt_tokens}/{r.completion_tokens}",
+            f"${r.cloud_cost_usd:.5f}",
+        )
+
+    console.print(table)
+
+    passed_results = [r for r in results if r.passed]
+    total_cost_if_all_passed = sum(r.cloud_cost_usd for r in passed_results)
+    pass_rate = len(passed_results) / len(results) if results else 0.0
+
+    console.print(
+        Panel(
+            f"Pass rate: [bold]{pass_rate:.0%}[/bold]  "
+            f"({len(passed_results)}/{len(results)} tasks the tiny model handled correctly and "
+            "so never needed to hit cloud at all)\n\n"
+            f"Cloud cost avoided on these {len(passed_results)} calls: "
+            f"[bold green]${total_cost_if_all_passed:.5f}[/bold green]\n"
+            f"At 10,000 similar calls/day, avoided cost per day: "
+            f"[bold green]${total_cost_if_all_passed / max(len(passed_results), 1) * 10_000:.2f}[/bold green]\n\n"
+            "[dim]Caveat: this is a 6-task pilot, not a statistically meaningful sample — treat "
+            "the pass rate as a smoke test, not a real escalation-rate estimate. The dollar figure "
+            "only counts calls that stayed local (would-be cloud cost of FAILED calls that still "
+            "had to escalate to cloud isn't a 'savings' — it's the actual cost of running twice).[/dim]",
+            title="Result",
+            style="green" if pass_rate >= 0.8 else "yellow",
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()
