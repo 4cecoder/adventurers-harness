@@ -285,30 +285,30 @@ def _has_json_keys(text: str, keys: set[str]) -> bool:
     return keys.issubset(obj.keys())
 
 
+def call_ollama(prompt: str, num_predict: int = 200) -> dict:
+    """Raw Ollama call with the settings this file has already learned it needs:
+    think=False (else MiniCPM5 burns 500-1000+ tokens on an unconstrained <think> chain even for
+    a one-word answer) and temperature=0/seed=42 (else identical prompts give different answers —
+    caught a safety check flip-flopping between SAFE and DANGEROUS on the exact same input)."""
+    resp = httpx.post(
+        OLLAMA_URL,
+        json={
+            "model": MODEL,
+            "prompt": prompt,
+            "stream": False,
+            "think": False,
+            "options": {"num_predict": num_predict, "temperature": 0, "seed": 42},
+        },
+        timeout=60.0,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 def run_task(task: dict) -> TaskResult:
     start = time.perf_counter()
     try:
-        resp = httpx.post(
-            OLLAMA_URL,
-            json={
-                "model": MODEL,
-                "prompt": task["prompt"],
-                "stream": False,
-                "think": False,  # MiniCPM5 is a hybrid reasoning model — without this it burns
-                # hundreds to 1000+ tokens on a <think> chain even for a one-word answer.
-                "options": {
-                    "num_predict": 200,  # hard cap as a backstop even with think off
-                    # Without temperature=0 the *safety* classification is non-deterministic:
-                    # the identical "rm -rf /" prompt returned SAFE on one run and DANGEROUS on
-                    # another. Not optional for anything gating destructive actions.
-                    "temperature": 0,
-                    "seed": 42,
-                },
-            },
-            timeout=60.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = call_ollama(task["prompt"])
     except (httpx.HTTPError, json.JSONDecodeError) as e:
         return TaskResult(
             name=task["name"],
@@ -333,6 +333,116 @@ def run_task(task: dict) -> TaskResult:
         completion_tokens=data.get("eval_count", 0),
         detail=output[:80].replace("\n", " "),
     )
+
+
+FEWSHOT_ESCALATE = """Decide whether to CONTINUE handling this step locally or ESCALATE it to a \
+larger cloud model. Reply with exactly one word.
+
+Rules of thumb:
+- Mechanical steps (reading output, extracting a fact, running an obvious next command): CONTINUE
+- Steps requiring design judgment, tradeoffs, or architecture decisions: ESCALATE
+
+Examples:
+Step: "Report the file and line number from this compiler error."
+Decision: CONTINUE
+
+Step: "Redesign the state machine so this entire class of bug can't happen again."
+Decision: ESCALATE
+
+Step: "Run the build again to confirm the fix worked."
+Decision: CONTINUE
+
+Now decide this step:
+Step: "{step}"
+Decision:"""
+
+
+def run_session_scenario() -> bool:
+    """Simulates one short multi-step task end-to-end — not isolated single-shot calls — to test
+    whether the cascade holds context across steps and correctly escalates only the step that
+    actually needs it. This is the gap the single-shot TASKS above can't see: a model could pass
+    every isolated check and still fail here if it can't carry the file/line context from one
+    step's tool output into the next step's extraction."""
+    console.print(Panel("[bold]Multi-Step Session Scenario[/bold]", style="magenta"))
+    all_passed = True
+
+    # Step 1: route the initial request.
+    request = "The build is failing because of a syntax error in ThreadViewModel.swift. Find it and tell me the line number."
+    step1 = call_ollama(FEWSHOT_CLASSIFY.format(request=request))
+    step1_out = step1.get("response", "")
+    step1_ok = "SIMPLE" in step1_out.upper() and "COMPLEX" not in step1_out.upper()
+    console.print(
+        f"  1. Route request        → {step1_out.strip()!r:20} {'✔' if step1_ok else '✘ (expected SIMPLE)'}"
+    )
+    all_passed &= step1_ok
+
+    # Step 2: generate the first tool call.
+    step2 = call_ollama(
+        FEWSHOT_EXTRACT_TOOL_CALL.format(request="build the project to see the compiler error")
+    )
+    step2_out = step2.get("response", "")
+    step2_ok = _has_json_keys(step2_out, {"tool"})
+    console.print(
+        f"  2. First tool call       → {step2_out.strip()!r:40} {'✔' if step2_ok else '✘'}"
+    )
+    all_passed &= step2_ok
+
+    # Step 3: extract structured info from a SIMULATED tool result — this is where a model that
+    # can't carry context forward would fail even though it passed steps 1 and 2 independently.
+    simulated_build_output = (
+        "Compiling GUI ThreadViewModel.swift\n"
+        "Sources/GUI/ThreadViewModel.swift:412:9: error: cannot find 'self' in scope\n"
+        "error: build failed"
+    )
+    step3_prompt = (
+        f"Compiler output:\n{simulated_build_output}\n\n"
+        'Extract a JSON object with keys "file" and "line" from the compiler output above. '
+        "Output ONLY JSON."
+    )
+    step3 = call_ollama(step3_prompt)
+    step3_out = step3.get("response", "")
+    step3_ok = (
+        _has_json_keys(step3_out, {"file", "line"})
+        and "ThreadViewModel.swift" in step3_out
+        and "412" in step3_out
+    )
+    console.print(
+        f"  3. Extract file:line     → {step3_out.strip()!r:40} {'✔' if step3_ok else '✘ (expected ThreadViewModel.swift:412)'}"
+    )
+    all_passed &= step3_ok
+
+    # Step 4a: a mechanical follow-up should stay local.
+    step4a = call_ollama(
+        FEWSHOT_ESCALATE.format(step="Report the file and line number to the user.")
+    )
+    step4a_out = step4a.get("response", "")
+    step4a_ok = "CONTINUE" in step4a_out.upper()
+    console.print(
+        f"  4a. Escalation gate (mechanical) → {step4a_out.strip()!r:20} {'✔' if step4a_ok else '✘ (expected CONTINUE)'}"
+    )
+    all_passed &= step4a_ok
+
+    # Step 4b: a genuine design question in the SAME session should escalate.
+    step4b = call_ollama(
+        FEWSHOT_ESCALATE.format(
+            step="Redesign ThreadViewModel's state management so 'self' scoping bugs like this can't happen again."
+        )
+    )
+    step4b_out = step4b.get("response", "")
+    step4b_ok = "ESCALATE" in step4b_out.upper()
+    console.print(
+        f"  4b. Escalation gate (design)     → {step4b_out.strip()!r:20} {'✔' if step4b_ok else '✘ (expected ESCALATE)'}"
+    )
+    all_passed &= step4b_ok
+
+    console.print(
+        Panel(
+            f"[bold]{'PASSED' if all_passed else 'FAILED'}[/bold] — "
+            f"{'the cascade correctly carried context across all 4 steps and only escalated the step that needed it' if all_passed else 'at least one step broke — see ✘ marks above'}",
+            style="green" if all_passed else "red",
+        )
+    )
+    return bool(all_passed)
 
 
 def main() -> None:
@@ -410,6 +520,8 @@ def main() -> None:
             style="green" if pass_rate >= 0.8 else "yellow",
         )
     )
+
+    run_session_scenario()
 
 
 if __name__ == "__main__":
