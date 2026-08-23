@@ -49,9 +49,43 @@ public actor KnowledgeRegistry {
 
     private var packets: [String: KnowledgePacket] = [:]
     private let fileManager = FileManager.default
+    private let directoryOverride: URL?
 
-    public init() {
-        self.packets = Self.defaultKnowledgePackets()
+    /// - Parameter directoryOverride: When non-nil, packets persist here instead of the real
+    ///   `~/.adventurers/knowledge` directory. Intended for tests.
+    public init(directoryOverride: URL? = nil) {
+        self.directoryOverride = directoryOverride
+        var initial = Self.defaultKnowledgePackets()
+        let dir = Self.resolveDirectory(override: directoryOverride)
+        for (id, packet) in Self.loadPackets(from: dir) {
+            initial[id] = packet
+        }
+        self.packets = initial
+    }
+
+    private static func resolveDirectory(override: URL?) -> URL {
+        let base = override ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".adventurers", isDirectory: true)
+            .appendingPathComponent("knowledge", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: base.path) {
+            try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        }
+        return base
+    }
+
+    private static func loadPackets(from directory: URL) -> [String: KnowledgePacket] {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
+            return [:]
+        }
+        var result: [String: KnowledgePacket] = [:]
+        for file in files where file.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: file),
+                  let packet = try? JSONDecoder().decode(KnowledgePacket.self, from: data) else {
+                continue
+            }
+            result[packet.id] = packet
+        }
+        return result
     }
 
     private static func defaultKnowledgePackets() -> [String: KnowledgePacket] {
@@ -102,15 +136,45 @@ public actor KnowledgeRegistry {
         return map
     }
 
-    /// Base knowledge directory: ~/.adventurers/knowledge/
+    /// Base knowledge directory: ~/.adventurers/knowledge/ (or `directoryOverride` in tests).
     public var baseDirectory: URL {
-        let home = fileManager.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".adventurers", isDirectory: true)
-                   .appendingPathComponent("knowledge", isDirectory: true)
+        Self.resolveDirectory(override: directoryOverride)
     }
 
+    /// Registers a packet in memory and persists it to disk so it survives relaunch. The two
+    /// built-in default packets (registered in `init`, never round-tripped through this) are not
+    /// affected by this — only packets registered after construction get written to disk.
     public func registerPacket(_ packet: KnowledgePacket) {
         packets[packet.id] = packet
+        persist(packet)
+    }
+
+    /// Convenience matching the shape of the old Docker-based Hindsight `/api/v1/knowledge/ingest`
+    /// endpoint this replaces — same fields, but native, persistent, and zero-dependency.
+    @discardableResult
+    public func ingest(
+        title: String,
+        content: String,
+        category: String = "Notes",
+        summary: String? = nil,
+        tags: [String] = []
+    ) -> KnowledgePacket {
+        let packet = KnowledgePacket(
+            id: UUID().uuidString,
+            title: title,
+            category: category,
+            summary: summary ?? String(content.prefix(160)),
+            tags: tags,
+            content: content
+        )
+        registerPacket(packet)
+        return packet
+    }
+
+    public func deletePacket(id: String) {
+        packets.removeValue(forKey: id)
+        let url = baseDirectory.appendingPathComponent("\(id).json")
+        try? fileManager.removeItem(at: url)
     }
 
     public func getPacket(id: String) -> KnowledgePacket? {
@@ -119,6 +183,12 @@ public actor KnowledgeRegistry {
 
     public func allPackets() -> [KnowledgePacket] {
         return Array(packets.values).sorted { $0.title < $1.title }
+    }
+
+    private func persist(_ packet: KnowledgePacket) {
+        let url = baseDirectory.appendingPathComponent("\(packet.id).json")
+        guard let data = try? JSONEncoder().encode(packet) else { return }
+        try? data.write(to: url)
     }
 
     /// Finds relevant knowledge packets for a given prompt or tool query.

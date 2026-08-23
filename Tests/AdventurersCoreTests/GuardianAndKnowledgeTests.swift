@@ -75,4 +75,30 @@ struct GuardianAndKnowledgeTests {
         #expect(!diffPackets.isEmpty)
         #expect(diffPackets.first?.id == "diff-engine-safety")
     }
+
+    @Test("KnowledgeRegistry persists ingested packets to disk and reloads them on relaunch")
+    func testKnowledgeRegistryPersistence() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("adventurers-knowledge-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let registry = KnowledgeRegistry(directoryOverride: tempDir)
+        let packet = await registry.ingest(
+            title: "Deploying to TestFlight",
+            content: "Run scripts/package_app.sh, then upload via altool.",
+            tags: ["deploy", "testflight"]
+        )
+
+        #expect(await registry.getPacket(id: packet.id)?.title == "Deploying to TestFlight")
+        #expect(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("\(packet.id).json").path))
+
+        // A fresh registry instance pointed at the same directory should pick it up — this is the
+        // actual "survives relaunch" behavior, not just "stays in memory for this instance."
+        let reloaded = KnowledgeRegistry(directoryOverride: tempDir)
+        #expect(await reloaded.getPacket(id: packet.id)?.content.contains("altool") == true)
+
+        await registry.deletePacket(id: packet.id)
+        #expect(await registry.getPacket(id: packet.id) == nil)
+        #expect(!FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("\(packet.id).json").path))
+    }
 }

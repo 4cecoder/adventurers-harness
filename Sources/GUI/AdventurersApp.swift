@@ -18,6 +18,7 @@ enum WorkbenchTab: String, CaseIterable, Identifiable, Sendable {
     case diff = "Diffs"
     case terminal = "Terminal"
     case skills = "Skills"
+    case memory = "Memory"
 
     var id: String { rawValue }
 
@@ -27,6 +28,7 @@ enum WorkbenchTab: String, CaseIterable, Identifiable, Sendable {
         case .diff:     "arrow.triangle.branch"
         case .terminal: "terminal.fill"
         case .skills:   "puzzlepiece.extension.fill"
+        case .memory:   "brain.head.profile"
         }
     }
 
@@ -36,6 +38,7 @@ enum WorkbenchTab: String, CaseIterable, Identifiable, Sendable {
         case .diff:     2
         case .terminal: 3
         case .skills:   4
+        case .memory:   5
         }
     }
 }
@@ -1228,6 +1231,8 @@ struct WorkbenchContentView: View {
                         TerminalOutputView(manager: appState.terminalManager)
                     case .skills:
                         SkillsPanelView()
+                    case .memory:
+                        MemoryPanelView()
                     }
                 } else {
                     EmptyWorkspacePlaceholder()
@@ -1494,6 +1499,11 @@ struct CommandPaletteModal: View {
                         appState.toggleInspector()
                         dismiss()
                     }
+
+                    CommandItemRow(title: "Open Memory", subtitle: "Browse and search knowledge packets", icon: "brain.head.profile", shortcut: "⌘5") {
+                        appState.activeTab = .memory
+                        dismiss()
+                    }
                 }
                 .padding(10)
             }
@@ -1608,6 +1618,11 @@ struct AgentCommands: Commands {
                 appState.activeTab = .skills
             }
             .keyboardShortcut("4", modifiers: .command)
+
+            Button("Switch to Memory Tab") {
+                appState.activeTab = .memory
+            }
+            .keyboardShortcut("5", modifiers: .command)
         }
 
         CommandMenu("Thread") {

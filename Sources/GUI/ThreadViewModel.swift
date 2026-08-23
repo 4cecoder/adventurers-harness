@@ -419,6 +419,63 @@ public final class ThreadViewModel: ObservableObject {
                 return
             }
 
+            // 🧠 Cooperative Cascade second-chance fast-path: Needle's static pattern matching
+            // didn't fire, but the request might still be simple enough for the local tiny-model
+            // sidecar to route without cloud. Every step here fails soft — sidecar unreachable,
+            // request classified COMPLEX, or no valid tool call extracted all fall through to the
+            // existing cloud loop below unchanged. See scripts/eval_cloud_savings.py for the
+            // validation behind this (100% pass rate on a 15-task + 5-step-session suite with
+            // qwen2.5:1.5b) and docs/updating.md-adjacent notes in cascade_server.py for the
+            // architecture rationale (sidecar over a Swift port).
+            if case .online = await CooperativeCascadeClient.shared.checkStatus(),
+               let routeDecision = try? await CooperativeCascadeClient.shared.route(request: text),
+               routeDecision == .simple,
+               let cascadeArgs = try? await CooperativeCascadeClient.shared.extractToolCall(request: text),
+               let cascadeToolName = cascadeArgs["tool"]?.stringValue {
+
+                terminalManager?.logCommand("[🧠 Cooperative Cascade Fast-Path] Routed to '\(cascadeToolName)' via local sidecar")
+
+                let agentMsgID = UUID().uuidString
+                var toolArgs = cascadeArgs
+                toolArgs.removeValue(forKey: "tool")
+
+                let initialMsg = ThreadMessage(
+                    id: agentMsgID,
+                    role: .agent,
+                    content: "🧠 *Executing via Cooperative Cascade local sidecar...*",
+                    toolCalls: [
+                        ThreadToolCall(id: "cascade-call-1", name: cascadeToolName, arguments: toolArgs.description, status: .running)
+                    ],
+                    isStreaming: true
+                )
+                self.appendMessage(initialMsg)
+
+                let toolExecResult = await self.executeNativeTool(name: cascadeToolName, arguments: toolArgs)
+                let cleanOutput = cascadeToolName == "run_command" || cascadeToolName == "bash"
+                    ? NeedleOutputCompactor.compactBuildLog(toolExecResult.output)
+                    : toolExecResult.output
+                let isErr = toolExecResult.error != nil && !toolExecResult.error!.isEmpty
+
+                let completedMsg = ThreadMessage(
+                    id: agentMsgID,
+                    role: .agent,
+                    content: isErr ? "Tool execution encountered an issue." : "🧠 Executed via Cooperative Cascade local sidecar.",
+                    toolCalls: [
+                        ThreadToolCall(id: "cascade-call-1", name: cascadeToolName, arguments: toolArgs.description, status: isErr ? .failed(error: toolExecResult.error ?? "Failed") : .succeeded(output: cleanOutput))
+                    ],
+                    toolResults: [
+                        ThreadToolResult(id: "cascade-res-1", toolCallID: "cascade-call-1", output: isErr ? (toolExecResult.error ?? "") : cleanOutput, isError: isErr)
+                    ],
+                    isStreaming: false
+                )
+                if let idx = self.messages.firstIndex(where: { $0.id == agentMsgID }) {
+                    self.messages[idx] = completedMsg
+                }
+                self.isGenerating = false
+                self.isLoadingSkeleton = false
+                return
+            }
+
             let judgerDecision = TaskJudgerEngine.shared.evaluate(prompt: text)
             var maxTurns = judgerDecision.recommendedTurnBudget
 
