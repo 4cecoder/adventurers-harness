@@ -33,7 +33,8 @@ from rich.table import Table
 console = Console()
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "openbmb/minicpm5:latest"
+# Override with: uv run scripts/eval_cloud_savings.py <model-name>
+MODEL = sys.argv[1] if len(sys.argv) > 1 else "openbmb/minicpm5:latest"
 
 # Reference cloud pricing (USD per million tokens) — Claude Sonnet list price as of this writing.
 # A reference point for "what would this have cost in cloud," not live/authoritative pricing.
