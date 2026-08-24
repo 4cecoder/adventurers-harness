@@ -174,13 +174,65 @@ final class UnifiedMemoryEngine: @unchecked Sendable {
     }
 }
 
-// MARK: - StdIn/StdOut MCP JSON-RPC Server Loop
+// MARK: - StdIn/StdOut MCP JSON-RPC Server Loop & Headless CLI Dispatcher
 
 @main
 struct UnifiedMemoryMCPServerMain {
     static func main() async {
         let engine = UnifiedMemoryEngine.shared
+        let args = CommandLine.arguments
 
+        // If invoked with CLI arguments directly (e.g. `adventurers-mcp list`, `adventurers-mcp search "query"`)
+        if args.count > 1 {
+            let cmd = args[1].lowercased()
+            switch cmd {
+            case "list", "ls":
+                let res = await engine.listPages()
+                printFormatted(res)
+            case "read", "cat":
+                let pageId = args.count > 2 ? args[2] : ""
+                let res = await engine.readPage(id: pageId)
+                printFormatted(res)
+            case "search", "find":
+                let query = args.dropFirst(2).joined(separator: " ")
+                let res = await engine.searchPages(query: query)
+                printFormatted(res)
+            case "reflect":
+                let query = args.dropFirst(2).joined(separator: " ")
+                let res = await engine.reflect(query: query)
+                printFormatted(res)
+            case "ingest", "add":
+                let title = args.count > 2 ? args[2] : "Untitled"
+                let content = args.count > 3 ? args.dropFirst(3).joined(separator: " ") : ""
+                let res = await engine.ingestDoc(title: title, content: content)
+                printFormatted(res)
+            case "status", "sync":
+                let res = await engine.syncStatus()
+                printFormatted(res)
+            case "diagnose", "info":
+                let res = await engine.diagnose()
+                printFormatted(res)
+            case "help", "--help", "-h":
+                print("""
+                Adventurers Harness — Unified Native Swift Memory CLI & MCP Server
+                
+                Usage:
+                  adventurers-mcp                        Start interactive MCP JSON-RPC server (for AGY, Claude, Cursor)
+                  adventurers-mcp list                   List all stored knowledge pages & mental models
+                  adventurers-mcp read <page_id>         Read full content of a knowledge page
+                  adventurers-mcp search <query>         Hybrid search knowledge pages
+                  adventurers-mcp reflect <query>        Perform cognitive memory reflection
+                  adventurers-mcp ingest <title> <text>  Ingest a document or decision
+                  adventurers-mcp status                 Check memory synchronization status
+                  adventurers-mcp diagnose               Show diagnostic metadata
+                """)
+            default:
+                print("Unknown command '\(cmd)'. Run 'adventurers-mcp help' for usage.")
+            }
+            return
+        }
+
+        // Standard MCP JSON-RPC Stdio Loop (for AGY / Claude Code / Cursor / Codex)
         while let line = readLine() {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
@@ -280,6 +332,15 @@ struct UnifiedMemoryMCPServerMain {
                 print(respStr)
                 fflush(stdout)
             }
+        }
+    }
+
+    private static func printFormatted(_ dict: [String: Any]) {
+        if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted]),
+           let str = String(data: data, encoding: .utf8) {
+            print(str)
+        } else {
+            print(dict)
         }
     }
 }

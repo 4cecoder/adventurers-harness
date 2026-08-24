@@ -9,6 +9,7 @@ let package = Package(
     ],
     products: [
         .executable(name: "Adventurers", targets: ["GUI"]),
+        .executable(name: "adventurers", targets: ["CLI"]),
         .executable(name: "adventurers-mcp", targets: ["UnifiedMemoryMCPServer"]),
         .library(name: "AdventurersCore", targets: ["AdventurersCore"]),
         .library(name: "LLMProviders", targets: ["LLMProviders"]),
@@ -55,6 +56,19 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/GUI",
+            swiftSettings: [
+                .swiftLanguageMode(.v6),
+            ]
+        ),
+        // Headless CLI Tool & Task Runner
+        .executableTarget(
+            name: "CLI",
+            dependencies: [
+                "AdventurersCore",
+                "LLMProviders",
+                "Tools",
+            ],
+            path: "Sources/CLI",
             swiftSettings: [
                 .swiftLanguageMode(.v6),
             ]
