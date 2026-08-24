@@ -130,49 +130,49 @@
   - **Acceptance Criteria**: Dispatches high-confidence developer tools (test runs, git status, git diff, grep searches) locally without cloud latency, and compresses noisy build/diff logs before cloud context injection.
   - **Microtest**: Passed `testTestCommandRouting()`, `testGitRouting()`, `testGrepSearchRouting()`, `testCloudEscalation()`, `testBuildLogCompactor()`, and `testDiffCompactor()`.
 
-- [ ] **Task 2.6: Native SourceKit-LSP Client Connection**
-  - **Target File**: `Sources/LSP/SourceKitLSPClient.swift`
+- [x] **Task 2.6: Native SourceKit-LSP Client Connection**
+  - **Target File**: `Sources/AdventurersCore/SourceKitLSPClient.swift`
   - **Description**: Launches and manages background `/usr/bin/sourcekit-lsp` server instance bound to the active workspace.
   - **Acceptance Criteria**: Sends `initialize`, `textDocument/didOpen`, `textDocument/didChange`, and receives diagnostics in real-time.
   - **Microtest**: `sourceKitLSPInitializeAndDiagnostics()`
 
-- [ ] **Task 2.7: Real-Time In-Memory LSP CompilationGate**
+- [x] **Task 2.7: Real-Time In-Memory LSP CompilationGate**
   - **Target File**: `Sources/AdventurersCore/LSPCompilationGate.swift`
   - **Description**: Preflight proposed Swift changes against SourceKit-LSP diagnostics without touching disk or running full `swift build`.
   - **Acceptance Criteria**: Rejects syntax/type errors in under 50ms before writing changes.
   - **Microtest**: `lspCompilationGateSubSecondPreflight()`
 
-- [ ] **Task 2.7: Multi-Language LSP Support Matrix (Rust, Zig, Python)**
-  - **Target File**: `Sources/LSP/MultiLanguageLSPManager.swift`
+- [x] **Task 2.7: Multi-Language LSP Support Matrix (Rust, Zig, Python)**
+  - **Target File**: `Sources/AdventurersCore/MultiLanguageLSPManager.swift`
   - **Description**: Auto-detects project language and connects to `rust-analyzer` (Rust), `zls` (Zig), or `pyright` (Python) if available.
   - **Acceptance Criteria**: Polyglot projects receive compiler diagnostics across all supported languages.
   - **Microtest**: `multiLanguageLSPDiscoveryAndBinding()`
 
-- [ ] **Task 2.8: SQLite Vector Embedding Store (`sqlite-vec`)**
-  - **Target File**: `Sources/Corpus/VectorStore.swift`
+- [x] **Task 2.8: SQLite Vector Embedding Store (`sqlite-vec`)**
+  - **Target File**: `Sources/AdventurersCore/VectorStore.swift`
   - **Description**: Embedded SQLite vector storage with Cosine similarity indexing for local project codebase embeddings.
   - **Acceptance Criteria**: Stores 1536-dim or 384-dim embeddings with sub-5ms nearest-neighbor queries across 10,000 code chunks.
   - **Microtest**: `vectorStoreInsertionAndCosineQuery()`
 
-- [ ] **Task 2.9: Semantic AST Code Chunker**
-  - **Target File**: `Sources/Corpus/ASTChunker.swift`
+- [x] **Task 2.9: Semantic AST Code Chunker**
+  - **Target File**: `Sources/AdventurersCore/ASTChunker.swift`
   - **Description**: Splits source code files along structural AST boundaries (classes, structs, functions, protocols) rather than arbitrary line counts.
   - **Acceptance Criteria**: Preserves complete function signatures and docstrings in every chunk.
   - **Microtest**: `astChunkerPreservesSignaturesAndContext()`
 
-- [ ] **Task 2.10: Apple Accelerate BNNS Local Embeddings Engine**
-  - **Target File**: `Sources/Corpus/LocalEmbeddingEngine.swift`
+- [x] **Task 2.10: Apple Accelerate BNNS Local Embeddings Engine**
+  - **Target File**: `Sources/AdventurersCore/LocalEmbeddingEngine.swift`
   - **Description**: Runs lightweight embedding models directly on Apple Silicon Neural Engine / Metal via Accelerate framework.
   - **Acceptance Criteria**: Generates embeddings offline at >500 chunks/sec with 0 network latency.
   - **Microtest**: `localEmbeddingGenerationSpeedAndAccuracy()`
 
-- [ ] **Task 2.11: Self-Hosted Dogfooding Loop (`/dogfood`)**
-  - **Target File**: `Sources/GUI/DogfoodManager.swift`
+- [x] **Task 2.11: Self-Hosted Dogfooding Loop (`/dogfood`)**
+  - **Target File**: `Sources/AdventurersCore/DogfoodManager.swift`
   - **Description**: Automated one-click workflow where Adventurers Harness uses its own tools and gates to inspect, build, test, and package its own repository.
   - **Acceptance Criteria**: Self-dev quick chips trigger complete preflight certification, build, and test runs with detailed progress reports.
   - **Microtest**: `dogfoodPipelineExecutionAndSelfCheck()`
 
-- [ ] **Task 2.12: Phase 2 Microtest Test Suite Expansion**
+- [x] **Task 2.12: Phase 2 Microtest Test Suite Expansion**
   - **Target File**: `Tests/AdventurersCoreTests/Phase2Microtests.swift`
   - **Description**: Comprehensive unit test suite covering Tasks 2.1 through 2.11.
 

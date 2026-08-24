@@ -106,4 +106,73 @@ struct NeedleProcessorTests {
         #expect(compacted.contains("Needle 2 Diff Compactor"))
         #expect(compacted.contains("📁 diff --git"))
     }
+
+    @Test("Needle 2 routes build commands to swift build")
+    func testBuildRouting() {
+        let processor = NeedleProcessor()
+        let decision = processor.process(prompt: "swift build")
+
+        #expect(decision.confidence >= 0.90)
+        if case .localFastExecute(let tool, let args) = decision.mode {
+            #expect(tool == "run_command")
+            #expect(args["command"] == "swift build")
+        } else {
+            Issue.record("Expected swift build fast execution")
+        }
+    }
+
+    @Test("Needle 2 routes file creation commands to write_to_file")
+    func testFileCreationRouting() {
+        let processor = NeedleProcessor()
+        let decision = processor.process(prompt: "create a new file called CHANGELOG.md")
+
+        #expect(decision.confidence >= 0.90)
+        if case .localFastExecute(let tool, let args) = decision.mode {
+            #expect(tool == "write_to_file")
+            #expect(args["path"] == "CHANGELOG.md")
+        } else {
+            Issue.record("Expected write_to_file for CHANGELOG.md")
+        }
+    }
+
+    @Test("Needle 2 extracts explicit file path for direct viewing")
+    func testExplicitFileViewing() {
+        let processor = NeedleProcessor()
+        let decision = processor.process(prompt: "show me Package.swift")
+
+        #expect(decision.confidence >= 0.90)
+        if case .localFastExecute(let tool, let args) = decision.mode {
+            #expect(tool == "view_file")
+            #expect(args["path"] == "Package.swift")
+        } else {
+            Issue.record("Expected view_file for Package.swift")
+        }
+    }
+
+    @Test("Needle 2 extracts structured contact record directly")
+    func testStructuredContactExtraction() {
+        let processor = NeedleProcessor()
+        let decision = processor.process(prompt: "extract contact: Reach out to Alex Chen at alex.chen@example.com about the PR.")
+
+        #expect(decision.confidence >= 0.90)
+        if case .directStructuredResponse(let json) = decision.mode {
+            #expect(json.contains("alex.chen@example.com"))
+            #expect(json.contains("Alex Chen"))
+        } else {
+            Issue.record("Expected directStructuredResponse for contact extraction")
+        }
+    }
+
+    @Test("Needle 2 categorizes bug report locally")
+    func testCategorizeBug() {
+        let processor = NeedleProcessor()
+        let decision = processor.process(prompt: "categorize item: app crashes on launch when no API key is set")
+
+        #expect(decision.confidence >= 0.90)
+        if case .directStructuredResponse(let json) = decision.mode {
+            #expect(json.contains("BUG"))
+        } else {
+            Issue.record("Expected BUG categorization")
+        }
+    }
 }

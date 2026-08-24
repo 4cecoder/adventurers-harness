@@ -59,7 +59,7 @@ public final class NeedleProcessor: Sendable {
 
         // 1. Direct Quick Tool Patterns
         // Test suite runner
-        if matchesAny(lower, patterns: ["run test", "run tests", "swift test", "test project", "run the tests", "execute tests"]) {
+        if matchesAny(lower, patterns: ["run test", "run tests", "swift test", "test project", "run the tests", "execute tests", "run the test suite", "run unit tests"]) {
             let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
             return NeedleDecision(
                 mode: .localFastExecute(tool: "run_command", arguments: ["command": "swift test --filter AdventurersCoreTests"]),
@@ -70,8 +70,20 @@ public final class NeedleProcessor: Sendable {
             )
         }
 
+        // Build / compile commands
+        if matchesAny(lower, patterns: ["swift build", "build project", "compile project", "build the app", "run build", "build harness"]) {
+            let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+            return NeedleDecision(
+                mode: .localFastExecute(tool: "run_command", arguments: ["command": "swift build"]),
+                confidence: 0.97,
+                latencyMs: latency,
+                rationale: "Matched build/compile execution pattern.",
+                tokenSavingsEstimated: 400
+            )
+        }
+
         // Git status check
-        if matchesAny(lower, patterns: ["git status", "check status", "what changed", "modified files", "git changes"]) {
+        if matchesAny(lower, patterns: ["git status", "check status", "what changed", "modified files", "git changes", "check git status", "show git status"]) {
             let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
             return NeedleDecision(
                 mode: .localFastExecute(tool: "run_command", arguments: ["command": "git status -s"]),
@@ -83,7 +95,7 @@ public final class NeedleProcessor: Sendable {
         }
 
         // Git diff check
-        if matchesAny(lower, patterns: ["git diff", "show diff", "show changes", "view diff", "what are the diffs"]) {
+        if matchesAny(lower, patterns: ["git diff", "show diff", "show changes", "view diff", "what are the diffs", "show git diff"]) {
             let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
             return NeedleDecision(
                 mode: .localFastExecute(tool: "run_command", arguments: ["command": "git diff"]),
@@ -94,8 +106,32 @@ public final class NeedleProcessor: Sendable {
             )
         }
 
+        // Git log / recent commits
+        if matchesAny(lower, patterns: ["git log", "recent commits", "show git log", "show commits", "git history", "commit history"]) {
+            let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+            return NeedleDecision(
+                mode: .localFastExecute(tool: "run_command", arguments: ["command": "git log -n 5 --oneline"]),
+                confidence: 0.95,
+                latencyMs: latency,
+                rationale: "Matched git commit history inspection.",
+                tokenSavingsEstimated: 450
+            )
+        }
+
+        // Git branch listing
+        if matchesAny(lower, patterns: ["git branch", "show branches", "list branches", "current branch"]) {
+            let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+            return NeedleDecision(
+                mode: .localFastExecute(tool: "run_command", arguments: ["command": "git branch"]),
+                confidence: 0.95,
+                latencyMs: latency,
+                rationale: "Matched git branch enumeration.",
+                tokenSavingsEstimated: 250
+            )
+        }
+
         // File list / Directory exploration
-        if matchesAny(lower, patterns: ["list files", "ls", "show files", "what files are here", "explore directory"]) {
+        if matchesAny(lower, patterns: ["list files", "ls", "show files", "what files are here", "explore directory", "list dir", "list directory"]) {
             let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
             return NeedleDecision(
                 mode: .localFastExecute(tool: "list_dir", arguments: ["path": "."]),
@@ -104,6 +140,38 @@ public final class NeedleProcessor: Sendable {
                 rationale: "Matched directory contents enumeration.",
                 tokenSavingsEstimated: 250
             )
+        }
+
+        // File Creation ("create a new file called X", "touch X", "create file X", "new file X")
+        if lower.contains("create a new file") || lower.contains("create file") || lower.contains("new file") || lower.hasPrefix("touch ") {
+            var targetPath = ""
+            let words = trimmed.split(separator: " ").map(String.init)
+            if let idx = words.firstIndex(where: { ["called", "named"].contains($0.lowercased()) }), idx + 1 < words.count {
+                let candidate = words[idx + 1].trimmingCharacters(in: CharacterSet(charactersIn: "\"'` "))
+                if !candidate.isEmpty {
+                    targetPath = candidate
+                }
+            } else if let idx = words.firstIndex(where: { ["touch", "file"].contains($0.lowercased()) }), idx + 1 < words.count {
+                let candidate = words[idx + 1].trimmingCharacters(in: CharacterSet(charactersIn: "\"'` "))
+                if candidate.contains(".") || candidate.contains("/") {
+                    targetPath = candidate
+                }
+            } else if let lastWord = words.last {
+                let candidate = lastWord.trimmingCharacters(in: CharacterSet(charactersIn: "\"'` "))
+                if candidate.contains(".") || candidate.contains("/") {
+                    targetPath = candidate
+                }
+            }
+            if !targetPath.isEmpty && !targetPath.contains("how") && targetPath != "file" && targetPath != "called" && targetPath != "named" {
+                let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+                return NeedleDecision(
+                    mode: .localFastExecute(tool: "write_to_file", arguments: ["path": targetPath, "content": ""]),
+                    confidence: 0.93,
+                    latencyMs: latency,
+                    rationale: "Matched file creation pattern for \(targetPath).",
+                    tokenSavingsEstimated: 350
+                )
+            }
         }
 
         // Exact code search / Grep
@@ -116,13 +184,19 @@ public final class NeedleProcessor: Sendable {
             } else if lower.hasPrefix("grep ") {
                 query = String(trimmed.dropFirst(5))
             }
+            // Strip trailing noise like "in the codebase", "in files", "in project"
+            for suffix in [" in the codebase", " in codebase", " in the project", " in files", " in repo", " in repository"] {
+                if query.lowercased().hasSuffix(suffix) {
+                    query = String(query.dropLast(suffix.count))
+                }
+            }
             query = query.trimmingCharacters(in: CharacterSet(charactersIn: "\"'` "))
 
             if !query.isEmpty && !query.contains("how") && !query.contains("why") {
                 let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
                 return NeedleDecision(
                     mode: .localFastExecute(tool: "grep_search", arguments: ["query": query]),
-                    confidence: 0.89,
+                    confidence: 0.90,
                     latencyMs: latency,
                     rationale: "Extracted exact pattern query for instant codebase grep.",
                     tokenSavingsEstimated: 400
@@ -130,21 +204,77 @@ public final class NeedleProcessor: Sendable {
             }
         }
 
-        // View specific target file if name mentioned
-        if lower.hasPrefix("view ") || lower.hasPrefix("read ") || lower.hasPrefix("open ") || lower.hasPrefix("show file ") {
+        // View specific target file (workspace match or explicit path/filename)
+        if lower.hasPrefix("view ") || lower.hasPrefix("read ") || lower.hasPrefix("open ") || lower.hasPrefix("show file ") || lower.hasPrefix("show me ") || lower.hasPrefix("cat ") {
+            // First check workspaceFiles
             for file in workspaceFiles {
                 let filename = (file as NSString).lastPathComponent.lowercased()
                 if lower.contains(filename) {
                     let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
                     return NeedleDecision(
                         mode: .localFastExecute(tool: "view_file", arguments: ["path": file]),
-                        confidence: 0.94,
+                        confidence: 0.95,
                         latencyMs: latency,
                         rationale: "Matched explicit file reading request for \(file).",
                         tokenSavingsEstimated: 350
                     )
                 }
             }
+
+            // If not found in workspaceFiles, extract standalone path/filename pattern (e.g., "show me Package.swift", "read README.md", "cat Sources/Main.swift")
+            let words = trimmed.split(separator: " ").map(String.init)
+            if let lastWord = words.last {
+                let candidate = lastWord.trimmingCharacters(in: CharacterSet(charactersIn: "\"'` "))
+                if (candidate.contains(".") || candidate.contains("/")) && !candidate.contains("?") && candidate.count > 2 {
+                    let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+                    return NeedleDecision(
+                        mode: .localFastExecute(tool: "view_file", arguments: ["path": candidate]),
+                        confidence: 0.92,
+                        latencyMs: latency,
+                        rationale: "Extracted target file path for direct viewing: \(candidate).",
+                        tokenSavingsEstimated: 350
+                    )
+                }
+            }
+        }
+
+        // Structured Contact Extraction ("extract contact: ...")
+        if lower.contains("extract contact") || (lower.contains("name") && lower.contains("email") && lower.contains("@")) {
+            if let emailMatch = trimmed.range(of: "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", options: .regularExpression) {
+                let email = String(trimmed[emailMatch])
+                // Extract name candidate before or near email
+                var name: String? = nil
+                if let nameMatch = trimmed.range(of: "([A-Z][a-z]+(?: [A-Z][a-z]+)+)", options: .regularExpression) {
+                    name = String(trimmed[nameMatch])
+                }
+                let json = "{\"name\": \(name != nil ? "\"\(name!)\"" : "null"), \"email\": \"\(email)\"}"
+                let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+                return NeedleDecision(
+                    mode: .directStructuredResponse(json: json),
+                    confidence: 0.91,
+                    latencyMs: latency,
+                    rationale: "Locally extracted structured contact record without cloud tokens.",
+                    tokenSavingsEstimated: 280
+                )
+            }
+        }
+
+        // Categorize Task (BUG / FEATURE / DOCS)
+        if lower.contains("categorize") || (lower.contains("category:") && (lower.contains("bug") || lower.contains("feature") || lower.contains("doc"))) {
+            var category = "FEATURE"
+            if lower.contains("crash") || lower.contains("hang") || lower.contains("error") || lower.contains("fail") || lower.contains("bug") || lower.contains("broken") {
+                category = "BUG"
+            } else if lower.contains("readme") || lower.contains("doc") || lower.contains("contributing") || lower.contains("guide") || lower.contains("typo") {
+                category = "DOCS"
+            }
+            let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+            return NeedleDecision(
+                mode: .directStructuredResponse(json: "{\"category\": \"\(category)\"}"),
+                confidence: 0.90,
+                latencyMs: latency,
+                rationale: "Locally classified item category as \(category).",
+                tokenSavingsEstimated: 200
+            )
         }
 
         // Default: Escalate to Cloud Model with rationale
