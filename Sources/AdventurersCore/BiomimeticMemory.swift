@@ -114,29 +114,32 @@ public actor BiomimeticMemoryEngine {
     public func recall(query: String, topK: Int = 5) async -> [BiomimeticMemoryRecord] {
         guard !records.isEmpty else { return [] }
 
+        let queryLower = query.lowercased()
+        let tokens = queryLower.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 2 }
+
+        var scored: [(record: BiomimeticMemoryRecord, score: Float)] = []
         let queryVec = embeddingEngine.embed(text: query)
-        let vectorResults = await vectorStore.search(queryVector: queryVec, topK: topK)
+        let vectorResults = await vectorStore.search(queryVector: queryVec, topK: topK * 2)
+        let vectorMap = Dictionary(uniqueKeysWithValues: vectorResults.map { ($0.chunk.id, $0.similarity) })
 
-        var matchedRecords: [BiomimeticMemoryRecord] = []
-        for vRes in vectorResults {
-            if let rec = records[vRes.chunk.id] {
-                matchedRecords.append(rec)
+        for rec in records.values {
+            var score: Float = vectorMap[rec.id] ?? 0.0
+            let titleLower = rec.title.lowercased()
+            let contentLower = rec.content.lowercased()
+            let tagsLower = rec.tags.map { $0.lowercased() }
+
+            for token in tokens {
+                if titleLower.contains(token) { score += 2.0 }
+                if tagsLower.contains(where: { $0.contains(token) }) { score += 1.5 }
+                if contentLower.contains(token) { score += 0.5 }
+            }
+
+            if score > 0 {
+                scored.append((rec, score))
             }
         }
 
-        // Fallback or blend with lexical token matching if vector search yields sparse matches
-        if matchedRecords.count < topK {
-            let tokens = query.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 2 }
-            for rec in records.values where !matchedRecords.contains(where: { $0.id == rec.id }) {
-                let text = "\(rec.title) \(rec.content)".lowercased()
-                if tokens.contains(where: { text.contains($0) }) {
-                    matchedRecords.append(rec)
-                    if matchedRecords.count >= topK { break }
-                }
-            }
-        }
-
-        return matchedRecords
+        return scored.sorted { $0.score > $1.score }.prefix(topK).map { $0.record }
     }
 
     /// Reflect: Synthesizes high-level observations and root-cause explanations across memory facts.
