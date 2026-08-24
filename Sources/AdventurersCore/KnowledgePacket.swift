@@ -217,4 +217,25 @@ public actor KnowledgeRegistry {
 
         return scored.sorted { $0.score > $1.score }.prefix(limit).map { $0.packet }
     }
+
+    /// Performs a deduplication pass over all stored packets on disk.
+    /// Groups by normalized title and category, keeping the most recent verified packet and removing duplicates.
+    @discardableResult
+    public func deduplicatePackets() -> Int {
+        var seen: [String: KnowledgePacket] = [:]
+        var removedCount = 0
+
+        let sorted = packets.values.sorted { $0.verifiedAt > $1.verifiedAt }
+        for packet in sorted {
+            let key = "\(packet.category.lowercased().trimmingCharacters(in: .whitespaces))::\(packet.title.lowercased().trimmingCharacters(in: .whitespaces))"
+            if let existing = seen[key] {
+                // Duplicate found: delete the older one
+                deletePacket(id: packet.id)
+                removedCount += 1
+            } else {
+                seen[key] = packet
+            }
+        }
+        return removedCount
+    }
 }

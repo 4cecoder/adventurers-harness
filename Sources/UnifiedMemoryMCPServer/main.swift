@@ -153,6 +153,17 @@ final class UnifiedMemoryEngine: @unchecked Sendable {
         ]
     }
 
+    func dedupe() async -> [String: Any] {
+        let removed = await registry.deduplicatePackets()
+        let count = await registry.allPackets().count
+        return [
+            "success": true,
+            "deduplicatedRecordsRemoved": removed,
+            "remainingPackets": count,
+            "status": "deduplication_complete"
+        ]
+    }
+
     func syncStatus() async -> [String: Any] {
         let count = await registry.allPackets().count
         return [
@@ -206,6 +217,9 @@ struct UnifiedMemoryMCPServerMain {
                 let content = args.count > 3 ? args.dropFirst(3).joined(separator: " ") : ""
                 let res = await engine.ingestDoc(title: title, content: content)
                 printFormatted(res)
+            case "dedupe", "clean":
+                let res = await engine.dedupe()
+                printFormatted(res)
             case "status", "sync":
                 let res = await engine.syncStatus()
                 printFormatted(res)
@@ -223,6 +237,7 @@ struct UnifiedMemoryMCPServerMain {
                   adventurers-mcp search <query>         Hybrid search knowledge pages
                   adventurers-mcp reflect <query>        Perform cognitive memory reflection
                   adventurers-mcp ingest <title> <text>  Ingest a document or decision
+                  adventurers-mcp dedupe                 Deduplicate memory records on disk
                   adventurers-mcp status                 Check memory synchronization status
                   adventurers-mcp diagnose               Show diagnostic metadata
                 """)
