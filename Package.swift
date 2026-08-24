@@ -9,6 +9,7 @@ let package = Package(
     ],
     products: [
         .executable(name: "Adventurers", targets: ["GUI"]),
+        .executable(name: "adventurers-mcp", targets: ["UnifiedMemoryMCPServer"]),
         .library(name: "AdventurersCore", targets: ["AdventurersCore"]),
         .library(name: "LLMProviders", targets: ["LLMProviders"]),
     ],
@@ -54,6 +55,17 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/GUI",
+            swiftSettings: [
+                .swiftLanguageMode(.v6),
+            ]
+        ),
+        // Unified Native Swift MCP Server for All Coding Agent CLIs (AGY, Claude Code, Cursor, OpenCode, Codex)
+        .executableTarget(
+            name: "UnifiedMemoryMCPServer",
+            dependencies: [
+                "AdventurersCore",
+            ],
+            path: "Sources/UnifiedMemoryMCPServer",
             swiftSettings: [
                 .swiftLanguageMode(.v6),
             ]
