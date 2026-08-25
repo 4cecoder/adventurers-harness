@@ -49,18 +49,40 @@ public final class SettingsModel {
         didSet { AppUpdateManager.shared.updateChannel = updateChannel }
     }
 
-    // MARK: Speech & Dictation (Talkies Pipeline)
+    // MARK: Speech & Dictation (WhisperKit Pipeline)
+
     public var enableDictation: Bool = true {
         didSet { save() }
     }
     public var dictationAutoPunctuation: Bool = true {
-        didSet { save() }
+        didSet {
+            save()
+            DictationManager.shared.applySettings(
+                silenceTimeout: dictationSilenceTimeoutSeconds,
+                autoPunctuation: dictationAutoPunctuation,
+                language: dictationLanguage
+            )
+        }
     }
     public var dictationSilenceTimeoutSeconds: Double = 4.5 {
-        didSet { save() }
+        didSet {
+            save()
+            DictationManager.shared.applySettings(
+                silenceTimeout: dictationSilenceTimeoutSeconds,
+                autoPunctuation: dictationAutoPunctuation,
+                language: dictationLanguage
+            )
+        }
     }
     public var dictationLanguage: String = "en-US" {
-        didSet { save() }
+        didSet {
+            save()
+            DictationManager.shared.applySettings(
+                silenceTimeout: dictationSilenceTimeoutSeconds,
+                autoPunctuation: dictationAutoPunctuation,
+                language: dictationLanguage
+            )
+        }
     }
 
     // MARK: LLM Provider & Execution Mode
@@ -2130,17 +2152,17 @@ private struct DictationSettingsPane: View {
                         Divider().foregroundStyle(Color.adDivider)
 
                         HStack {
-                            Label("Apple Speech Recognition", systemImage: "waveform.badge.plus")
+                            Label("On-device Whisper Model", systemImage: "waveform.badge.plus")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(Color.adTextPrimary)
                             Spacer()
                             HStack(spacing: 6) {
                                 Circle()
-                                    .fill(dictation.hasSpeechPermission ? Color.adSuccess : Color.adError)
+                                    .fill(dictation.isWhisperReady ? Color.adSuccess : Color.adOrange)
                                     .frame(width: 8, height: 8)
-                                Text(dictation.hasSpeechPermission ? "Authorized" : "Not Authorized")
+                                Text(dictation.isWhisperReady ? "Ready" : "Loading / Downloading…")
                                     .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(dictation.hasSpeechPermission ? Color.adSuccess : Color.adError)
+                                    .foregroundStyle(dictation.isWhisperReady ? Color.adSuccess : Color.adOrange)
                             }
                         }
 

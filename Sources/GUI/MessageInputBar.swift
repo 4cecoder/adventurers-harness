@@ -375,6 +375,17 @@ public struct MessageInputBar: View {
                         .transition(.scale.combined(with: .opacity))
                 }
 
+                // Dictation failure surfacing (permission denied, model loading, transcription errors)
+                if case .error(let message) = dictation.state {
+                    Text(message)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.adError)
+                        .lineLimit(1)
+                        .frame(maxWidth: 240, alignment: .leading)
+                        .transition(.opacity)
+                        .help(message)
+                }
+
                 ZStack {
                     // Pulsing glow when dictation is active
                     if dictation.state.isListening {
