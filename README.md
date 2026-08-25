@@ -144,3 +144,15 @@ Automated via GitHub Actions:
 ## License
 
 MIT
+
+---
+
+## 📦 Build & Install
+
+Full guide: [docs/install.md](docs/install.md)
+
+```bash
+./scripts/run_dev_app.sh     # Debug build wrapped in a proper .app bundle (mic permissions work)
+./scripts/package_app.sh     # Release build → dist/Adventurers.app + DMG/ZIP/TAR.GZ + sha256
+./scripts/install_local.sh   # Install dist/Adventurers.app to /Applications and launch
+```

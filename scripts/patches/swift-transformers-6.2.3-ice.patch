@@ -1,0 +1,21 @@
+diff --git a/Sources/Tokenizers/Trie.swift b/Sources/Tokenizers/Trie.swift
+index 9456be8..441c0a1 100644
+--- a/Sources/Tokenizers/Trie.swift
++++ b/Sources/Tokenizers/Trie.swift
+@@ -85,7 +85,15 @@ struct LeavesWithCommonPrefixIterator<T: Hashable>: Sequence, IteratorProtocol {
+     var node: TrieNode<T>
+     var text: any Sequence<T>
+     var seq: [T] = []
+-    lazy var iterator = text.makeIterator() as any IteratorProtocol<T>
++    // Workaround: `lazy var` here triggers an SIL lifetime verifier crash in Swift 6.2.3 -O
++    // (OwnershipModelEliminator) when specialized through Sequence.map. Initialize eagerly instead.
++    var iterator: any IteratorProtocol<T>
++
++    init(node: TrieNode<T>, text: any Sequence<T>) {
++        self.node = node
++        self.text = text
++        self.iterator = text.makeIterator()
++    }
+ 
+     mutating func next() -> [T]? {
+         while true {

@@ -12,9 +12,15 @@ VERSION="${1:-1.0.0}"
 # Sparkle's `generate_keys` tool — see docs/updating.md. It is safe to commit/bake into the app;
 # only the matching private key (used in CI to sign each release, never checked into the repo)
 # needs to stay secret.
+#
+# Resolution order: $SPARKLE_PUBLIC_KEY env -> cached key at .sparkle-tools/eddsa_pubkey.txt
+# (private half lives in the macOS Keychain) -> unset, with a warning.
 SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://github.com/4cecoder/adventurers-harness/releases/download/latest/appcast.xml}"
-SPARKLE_PUBLIC_KEY="${SPARKLE_PUBLIC_KEY:-}"
-if [ -z "${SPARKLE_PUBLIC_KEY}" ]; then
+PUBKEY_CACHE="${ROOT_DIR}/.sparkle-tools/eddsa_pubkey.txt"
+if [ -z "${SPARKLE_PUBLIC_KEY:-}" ] && [ -s "${PUBKEY_CACHE}" ]; then
+    SPARKLE_PUBLIC_KEY="$(tr -d '[:space:]' < "${PUBKEY_CACHE}")"
+fi
+if [ -z "${SPARKLE_PUBLIC_KEY:-}" ]; then
     echo "⚠️  SPARKLE_PUBLIC_KEY is not set — packaging without update-signature verification configured."
     echo "    Run './scripts/sparkle_tools.sh generate_keys' once (see docs/updating.md), then set"
     echo "    SPARKLE_PUBLIC_KEY to the public key it prints and store the private key for CI signing."
@@ -33,6 +39,13 @@ fi
 # Step 2: Build release binary for macOS Apple Silicon (arm64)
 echo "🔨 Building Release binary for macOS arm64..."
 cd "${ROOT_DIR}"
+
+# Clear orphaned SwiftPM builds holding the .build lock (see script header for rationale).
+"${ROOT_DIR}/scripts/wait_build_lock.sh"
+
+# Swift 6.2.3-RELEASE toolchain ICE workaround for swift-transformers under -O (idempotent).
+"${ROOT_DIR}/scripts/patch_swift_transformers.sh"
+
 swift build -c release --triple arm64-apple-macosx15.0
 
 BIN_DIR="$(swift build -c release --triple arm64-apple-macosx15.0 --show-bin-path)"

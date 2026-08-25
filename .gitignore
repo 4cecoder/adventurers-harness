@@ -3,6 +3,7 @@
 # Build & Dist
 .build/
 .swiftpm/
+.tools/
 DerivedData/
 dist/
 .sparkle-tools/
