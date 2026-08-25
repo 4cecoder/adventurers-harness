@@ -12,14 +12,38 @@ import AdventurersCore
 public struct MemoryPanelView: View {
     @State private var packets: [KnowledgePacket] = []
     @State private var searchText = ""
+    @State private var selectedCategoryFilter: String = "All"
     @State private var isShowingAddSheet = false
+    @State private var isDeduplicating = false
+
+    private let categoryFilters = ["All", "World Facts", "Mental Models", "Harness Safety", "Languages", "Ingested"]
 
     public init() {}
 
     private var filteredPackets: [KnowledgePacket] {
-        guard !searchText.isEmpty else { return packets }
+        var list = packets
+        if selectedCategoryFilter != "All" {
+            list = list.filter { packet in
+                switch selectedCategoryFilter {
+                case "World Facts":
+                    return packet.category.lowercased().contains("world") || packet.title.lowercased().contains("world fact")
+                case "Mental Models":
+                    return packet.category.lowercased().contains("mental") || packet.title.lowercased().contains("mental model") || packet.title.lowercased().contains("architecture")
+                case "Harness Safety":
+                    return packet.category.lowercased().contains("safety") || packet.tags.contains("safety")
+                case "Languages":
+                    return packet.category.lowercased().contains("language") || packet.category.lowercased().contains("framework")
+                case "Ingested":
+                    return packet.category.lowercased().contains("ingest") || packet.category.lowercased().contains("notes")
+                default:
+                    return true
+                }
+            }
+        }
+
+        guard !searchText.isEmpty else { return list }
         let query = searchText.lowercased()
-        return packets.filter {
+        return list.filter {
             $0.title.lowercased().contains(query)
                 || $0.summary.lowercased().contains(query)
                 || $0.tags.contains { $0.lowercased().contains(query) }
@@ -29,6 +53,9 @@ public struct MemoryPanelView: View {
     public var body: some View {
         VStack(spacing: 0) {
             header
+
+            // Cognitive Category Filter Bar
+            categoryFilterBar
 
             Divider().overlay(Color.adDivider)
 
@@ -66,10 +93,10 @@ public struct MemoryPanelView: View {
                 .foregroundStyle(Color.adOrange)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Memory")
+                Text("Unified Cognitive Memory")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(Color.adTextPrimary)
-                Text("\(packets.count) knowledge packet\(packets.count == 1 ? "" : "s") · native, on-device, persisted to ~/.adventurers/knowledge")
+                Text("\(packets.count) knowledge pages · Biomimetic 4-Tier Hierarchy · Accelerate Vector Index")
                     .font(.system(size: 10))
                     .foregroundStyle(Color.adTextTertiary)
             }
@@ -88,14 +115,36 @@ public struct MemoryPanelView: View {
             .padding(.vertical, 6)
             .background(Color.adElevated)
             .clipShape(RoundedRectangle(cornerRadius: 6))
-            .frame(width: 220)
+            .frame(width: 200)
+
+            Button {
+                Task {
+                    isDeduplicating = true
+                    await KnowledgeRegistry.shared.deduplicatePackets()
+                    await reload()
+                    isDeduplicating = false
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: isDeduplicating ? "arrow.triangle.2.circlepath" : "sparkles")
+                    Text("Dedupe")
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.adTextSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.adElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .help("Run deduplication pass to prune duplicate records")
 
             Button {
                 isShowingAddSheet = true
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus")
-                    Text("Add")
+                    Text("Add Memory")
                 }
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.black)
@@ -110,12 +159,35 @@ public struct MemoryPanelView: View {
         .background(Color.adNavy)
     }
 
+    private var categoryFilterBar: some View {
+        HStack(spacing: 8) {
+            ForEach(categoryFilters, id: \.self) { filter in
+                Button {
+                    selectedCategoryFilter = filter
+                } label: {
+                    Text(filter)
+                        .font(.system(size: 11, weight: selectedCategoryFilter == filter ? .semibold : .regular))
+                        .foregroundStyle(selectedCategoryFilter == filter ? Color.adOrange : Color.adTextSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(selectedCategoryFilter == filter ? Color.adOrange.opacity(0.15) : Color.clear)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.adBackground.opacity(0.8))
+    }
+
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "brain.head.profile")
                 .font(.system(size: 28))
                 .foregroundStyle(Color.adTextTertiary)
-            Text(searchText.isEmpty ? "No knowledge packets yet" : "No matches for \"\(searchText)\"")
+            Text(searchText.isEmpty ? "No knowledge packets in \(selectedCategoryFilter)" : "No matches for \"\(searchText)\"")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.adTextSecondary)
         }

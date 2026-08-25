@@ -151,6 +151,7 @@ public actor KnowledgeRegistry {
 
     /// Convenience matching the shape of the old Docker-based Hindsight `/api/v1/knowledge/ingest`
     /// endpoint this replaces — same fields, but native, persistent, and zero-dependency.
+    /// Performs an idempotent upsert: if a packet with the same normalized title and category exists, it updates in-place.
     @discardableResult
     public func ingest(
         title: String,
@@ -159,6 +160,27 @@ public actor KnowledgeRegistry {
         summary: String? = nil,
         tags: [String] = []
     ) -> KnowledgePacket {
+        let normCategory = category.lowercased().trimmingCharacters(in: .whitespaces)
+        let normTitle = title.lowercased().trimmingCharacters(in: .whitespaces)
+
+        // Check if matching packet already exists (upsert)
+        if let existing = packets.values.first(where: {
+            $0.category.lowercased().trimmingCharacters(in: .whitespaces) == normCategory &&
+            $0.title.lowercased().trimmingCharacters(in: .whitespaces) == normTitle
+        }) {
+            let updated = KnowledgePacket(
+                id: existing.id,
+                title: title,
+                category: category,
+                summary: summary ?? String(content.prefix(160)),
+                tags: tags.isEmpty ? existing.tags : tags,
+                content: content,
+                verifiedAt: Date()
+            )
+            registerPacket(updated)
+            return updated
+        }
+
         let packet = KnowledgePacket(
             id: UUID().uuidString,
             title: title,
@@ -228,7 +250,7 @@ public actor KnowledgeRegistry {
         let sorted = packets.values.sorted { $0.verifiedAt > $1.verifiedAt }
         for packet in sorted {
             let key = "\(packet.category.lowercased().trimmingCharacters(in: .whitespaces))::\(packet.title.lowercased().trimmingCharacters(in: .whitespaces))"
-            if let existing = seen[key] {
+            if seen[key] != nil {
                 // Duplicate found: delete the older one
                 deletePacket(id: packet.id)
                 removedCount += 1
