@@ -122,6 +122,11 @@ final class AppState {
 
     init() {
         loadThreadsFromStore()
+        DictationManager.shared.applySettings(
+            silenceTimeout: settingsModel.dictationSilenceTimeoutSeconds,
+            autoPunctuation: settingsModel.dictationAutoPunctuation,
+            language: settingsModel.dictationLanguage
+        )
         Task { @MainActor in
             await settingsModel.fetchLiveModelsForActiveProvider()
         }
@@ -445,6 +450,44 @@ struct AdventurersApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultPosition(.center)
+
+        // MARK: - Native macOS Menu Bar Extra (System Tray)
+        MenuBarExtra("Adventurers", systemImage: "shield.checkered") {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Adventurers Harness")
+                    .font(.headline)
+
+                Divider()
+
+                Button("Open Workbench") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    for window in NSApp.windows where window.canBecomeMain {
+                        window.makeKeyAndOrderFront(nil)
+                    }
+                }
+                .keyboardShortcut("1", modifiers: .command)
+
+                Button("Open Settings…") {
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+
+                Divider()
+
+                Button("Memory: \(appState.currentWorkspace)") {
+                    appState.activeTab = .memory
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+
+                Divider()
+
+                Button("Quit Adventurers") {
+                    NSApp.terminate(nil)
+                }
+                .keyboardShortcut("q", modifiers: .command)
+            }
+        }
+        .menuBarExtraStyle(.menu)
     }
 }
 
@@ -1692,7 +1735,7 @@ struct AboutView: View {
                 .foregroundStyle(Color.adTextTertiary)
                 .italic()
             Divider()
-            Text("Version 1.0.0 • macOS Native")
+            Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0") • macOS Native")
                 .font(.caption)
                 .foregroundStyle(Color.adTextSecondary)
         }

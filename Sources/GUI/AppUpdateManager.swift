@@ -75,8 +75,12 @@ public enum UpdateStatus: Equatable, Sendable {
 public final class AppUpdateManager: NSObject, SPUUpdaterDelegate {
     public static let shared = AppUpdateManager()
 
-    public let currentVersion: String = "2.4.0"
-    public let currentBuild: String = "2026.08.19"
+    public var currentVersion: String {
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.0.0"
+    }
+    public var currentBuild: String {
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String) ?? currentVersion
+    }
     public let repoOwner: String = "4cecoder"
     public let repoName: String = "adventurers-harness"
 
@@ -123,11 +127,19 @@ public final class AppUpdateManager: NSObject, SPUUpdaterDelegate {
         }
     }
 
+    /// Whether the packaged app ships a Sparkle EdDSA verification key. Ad-hoc/local builds
+    /// (packaged with SPARKLE_PUBLIC_KEY unset) have an empty SUPublicEDKey — automatic
+    /// background checks are suppressed in that case since Sparkle cannot verify signatures.
+    private var hasUpdateSigningKey: Bool {
+        guard let key = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String else { return false }
+        return !key.isEmpty
+    }
+
     /// Whether Sparkle checks for updates automatically in the background (bound to the
     /// "Check for updates on launch" setting).
     public var automaticallyChecksForUpdates: Bool {
         get { controller.updater.automaticallyChecksForUpdates }
-        set { controller.updater.automaticallyChecksForUpdates = newValue }
+        set { controller.updater.automaticallyChecksForUpdates = hasUpdateSigningKey ? newValue : false }
     }
 
     /// Triggers a user-initiated check. Sparkle shows its own native alert for everything from
@@ -140,6 +152,7 @@ public final class AppUpdateManager: NSObject, SPUUpdaterDelegate {
 
     /// Silent background check (no alert if already up to date), used on launch.
     public func checkForUpdatesInBackground() {
+        guard hasUpdateSigningKey else { return }
         controller.updater.checkForUpdatesInBackground()
     }
 
