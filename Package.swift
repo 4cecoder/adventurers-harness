@@ -16,7 +16,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.6.4"),
-        .package(url: "https://github.com/argmaxinc/WhisperKit", from: "0.9.0"),
+        .package(url: "https://github.com/argmaxinc/WhisperKit", from: "1.1.0"),
     ],
     targets: [
         // Core harness: agent loop, FSM, gates, contracts, journal
